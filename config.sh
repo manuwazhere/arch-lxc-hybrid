@@ -15,7 +15,7 @@ CT_HOSTNAME=arch-desktop
 
 CORES=10
 MEMORY_MB=16384
-SWAP_MB=512
+SWAP_MB=0
 DISK_GB=64
 STORAGE=local-zfs            # storage del rootfs (ATTENZIONE: verifica con `pvesm status`)
 TEMPLATE_STORAGE=local       # storage dei template (vztmpl)
@@ -58,3 +58,8 @@ INSTALL_MEDIA=1              # 1 = desktop multimediale (vedi MEDIA_PACKAGES)
 MEDIA_PACKAGES="spectacle gwenview okular ark vlc vlc-plugins-all plasma5-integration \
 ffmpegthumbs kdegraphics-thumbnailers kio-extras"
 DISABLE_FILE_INDEXING=1      # 1 = disattiva Baloo (indicizzazione file): evita picchi di CPU/disco
+
+# --- Helper AUR e pacchetti AUR ----------------------------------------------------
+INSTALL_AUR_HELPER=1         # 1 = installa yay-bin (con makepkg); poi `yay -Syu` aggiorna anche Sunshine
+AUR_PACKAGES=""              # pacchetti AUR in più, installati con yay (es. "brave-bin"):
+                             # vuoto nel repo, mettili nel tuo config.local.sh

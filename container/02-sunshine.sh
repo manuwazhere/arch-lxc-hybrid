@@ -13,17 +13,39 @@ TMP_SUDOERS=/etc/sudoers.d/99-tmp-aur-build
 cleanup() { rm -f "$TMP_SUDOERS"; }
 trap cleanup EXIT
 
-# --- Build dall'AUR (sudo senza password solo per la durata del build) ----------------
-if pacman -Qi sunshine-bin &>/dev/null; then
-  log "sunshine-bin già installato ($(pacman -Q sunshine-bin))"
-else
-  log "Build di sunshine-bin dall'AUR"
-  echo "$UTENTE ALL=(ALL) NOPASSWD: ALL" >"$TMP_SUDOERS"
-  chmod 440 "$TMP_SUDOERS"
-  visudo -cf "$TMP_SUDOERS" >/dev/null
-  runuser -u "$UTENTE" -- env HOME="/home/$UTENTE" bash "$STAGE/container/aur-build.sh"
-  cleanup
+as_user() { runuser -u "$UTENTE" -- env HOME="/home/$UTENTE" "$@"; }
+
+# --- Build dall'AUR (sudo senza password solo per la durata di questi passi) -----------
+log "Sudo senza password temporaneo per le build AUR"
+echo "$UTENTE ALL=(ALL) NOPASSWD: ALL" >"$TMP_SUDOERS"
+chmod 440 "$TMP_SUDOERS"
+visudo -cf "$TMP_SUDOERS" >/dev/null
+
+build_aur() { # pacchetto
+  if pacman -Qi "$1" &>/dev/null; then
+    log "$1 già installato ($(pacman -Q "$1"))"
+  else
+    log "Build di $1 dall'AUR"
+    as_user bash "$STAGE/container/aur-build.sh" "$1"
+  fi
+}
+
+# yay-bin e sunshine-bin con makepkg (Sunshine così tiene il pin e il PKGBUILD nel log);
+# da qui in poi `yay -Syu` li aggiorna entrambi.
+if ((INSTALL_AUR_HELPER)); then build_aur yay-bin; fi
+build_aur sunshine-bin
+
+if [[ -n $AUR_PACKAGES ]]; then
+  command -v yay >/dev/null || die "AUR_PACKAGES richiede INSTALL_AUR_HELPER=1."
+  read -ra aur <<<"$AUR_PACKAGES"
+  for p in "${aur[@]}"; do
+    echo "----- PKGBUILD di $p (per il log: controllalo) -----"
+    as_user yay -Gp "$p" || warn "Impossibile stampare il PKGBUILD di $p"
+  done
+  log "Installazione con yay: ${aur[*]}"
+  as_user yay -S --needed --noconfirm "${aur[@]}"
 fi
+cleanup
 
 # --- Configurazione ---------------------------------------------------------------------------
 log "Configurazione di Sunshine"

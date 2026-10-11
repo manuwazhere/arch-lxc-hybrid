@@ -48,7 +48,10 @@ files/plasma-session.service
 - **Connettore video**: `CONNETTORE=auto` cerca in `/sys/class/drm` l'uscita di tipo `HDMI-A-n`
   (le USB-C e la DP compaiono come `DP-n`), preferendo quella `connected`.
 - **Password**: mai nel repo; chiesta a runtime o da `UTENTE_PASSWORD` (es. in `config.local.sh`).
-- **AUR**: `SUNSHINE_AUR_COMMIT` permette di fissare un commit; il PKGBUILD finisce nel log.
+- **AUR**: `yay-bin` e `sunshine-bin` si compilano con `makepkg` (`SUNSHINE_AUR_COMMIT` fissa un commit di
+  Sunshine; i PKGBUILD finiscono nel log). Poi `yay -Syu` aggiorna repo e AUR insieme. Pacchetti AUR
+  extra (es. Brave) in `AUR_PACKAGES`, meglio nel proprio `config.local.sh`. Senza helper:
+  `INSTALL_AUR_HELPER=0`, e gli aggiornamenti AUR vanno fatti a mano.
 - **Permessi GPU**: `renderD*` a 0666; `card*` a `CARD_MODE` (default 0660, da verificare).
 - **Desktop**: `plasma-desktop` e non `plasma-meta`, così Discover, Bluetooth, applet di rete,
   firewall/thunderbolt/dischi/vault e KRDP non vengono installati. `powerdevil` è dipendenza dura

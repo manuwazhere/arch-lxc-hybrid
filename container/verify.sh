@@ -59,6 +59,9 @@ check "sunshine.conf: capture = kwin" t_conf
 check "Sunshine in ascolto (47989)" t_port 47989
 check "Sunshine in ascolto (47990)" t_port 47990
 check "sudoers temporaneo dell'AUR rimosso" t_no_tmp_sudoers
+if ((INSTALL_AUR_HELPER)); then check "yay installato" command -v yay; fi
+read -ra aur_pkgs <<<"${AUR_PACKAGES:-}"
+for p in "${aur_pkgs[@]}"; do check "pacchetto AUR $p installato" pacman -Q "$p"; done
 
 echo
 log "Info (non sono controlli):"
