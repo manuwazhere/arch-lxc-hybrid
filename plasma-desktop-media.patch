@@ -1,0 +1,166 @@
+From 3da340514eccdcc6c49f9e3de7fcd93b52c00c8d Mon Sep 17 00:00:00 2001
+From: Manu <manu@localhost>
+Date: Sun, 11 Oct 2026 15:00:51 +0000
+Subject: [PATCH] Passa da plasma-meta a plasma-desktop, desktop multimediale
+ con VLC, Baloo e sospensione disattivati
+
+---
+ README.md              |  4 ++++
+ config.sh              | 13 +++++++++++++
+ container/01-system.sh | 41 ++++++++++++++++++++++++++++++++---------
+ container/verify.sh    | 10 ++++++++--
+ install.sh             |  3 ++-
+ 5 files changed, 59 insertions(+), 12 deletions(-)
+
+diff --git a/README.md b/README.md
+index 8b8a676..2ecbb7d 100644
+--- a/README.md
++++ b/README.md
+@@ -50,6 +50,10 @@ files/plasma-session.service
+ - **Password**: mai nel repo; chiesta a runtime o da `UTENTE_PASSWORD` (es. in `config.local.sh`).
+ - **AUR**: `SUNSHINE_AUR_COMMIT` permette di fissare un commit; il PKGBUILD finisce nel log.
+ - **Permessi GPU**: `renderD*` a 0666; `card*` a `CARD_MODE` (default 0660, da verificare).
++- **Desktop**: `plasma-desktop` e non `plasma-meta`, così Discover, Bluetooth, applet di rete,
++  firewall/thunderbolt/dischi/vault e KRDP non vengono installati. `powerdevil` è dipendenza dura
++  di `plasma-desktop`: resta, ma la sospensione è mascherata e lo spegnimento schermo disattivato.
++  Gli elenchi sono in `config.sh` (`PLASMA_PACKAGES`, `MEDIA_PACKAGES`). Baloo è disattivato di default.
+ - **Rete**: il CT sta su `vmbr0`. Il bufferbloat dell'iliadbox e un eventuale flow control
+   sulla 2,5G sono questioni a parte, non gestite qui.
+ 
+diff --git a/config.sh b/config.sh
+index d9a8389..53bc5da 100644
+--- a/config.sh
++++ b/config.sh
+@@ -45,3 +45,16 @@ CARD_MODE=0660
+ SUNSHINE_AUR_COMMIT=""       # vuoto = ultimo commit dell'AUR; oppure fissa un hash per riproducibilità
+ INSTALL_DIAG=1               # 1 = installa mesa-utils e iperf3 (diagnostica)
+ EXTRA_PACKAGES=""            # pacchetti pacman aggiuntivi, separati da spazio
++
++# --- Pacchetti desktop ---------------------------------------------------------------
++# plasma-desktop invece di plasma-meta, di proposito: niente Discover, Bluetooth,
++# applet NetworkManager, firewall/thunderbolt/dischi/vault, KRDP. Un meta-pacchetto
++# non permette di togliere le sue dipendenze una per una.
++# powerdevil resta: è dipendenza dura di plasma-desktop (lo rendiamo innocuo in 01-system.sh).
++PLASMA_PACKAGES="plasma-desktop kscreen kscreenlocker kwin kpipewire xdg-desktop-portal-kde \
++plasma-pa plasma-systemmonitor kinfocenter kde-cli-tools kde-gtk-config breeze breeze-gtk \
++kdeplasma-addons drkonqi ocean-sound-theme oxygen-sounds konsole dolphin"
++INSTALL_MEDIA=1              # 1 = desktop multimediale (vedi MEDIA_PACKAGES)
++MEDIA_PACKAGES="spectacle gwenview okular ark vlc vlc-plugins-all plasma5-integration \
++ffmpegthumbs kdegraphics-thumbnailers kio-extras"
++DISABLE_FILE_INDEXING=1      # 1 = disattiva Baloo (indicizzazione file): evita picchi di CPU/disco
+diff --git a/container/01-system.sh b/container/01-system.sh
+index 000d1ea..8087d12 100755
+--- a/container/01-system.sh
++++ b/container/01-system.sh
+@@ -23,20 +23,38 @@ pacman-key --populate archlinux
+ pacman -Syu --noconfirm
+ 
+ # --- Pacchetti -----------------------------------------------------------------------
+-log "Pacchetti (GPU, Plasma, audio, strumenti AUR)"
+-PKGS=(sudo openssh nano base-devel git
++# Fase 1: base, GPU e audio. I provider (jack, backend multimediale di Qt) li fissiamo qui,
++# così nella fase 2 pacman non deve sceglierli da solo con --noconfirm.
++log "Pacchetti: base, GPU, audio"
++BASE=(sudo openssh nano base-devel git
+   intel-media-driver libva-utils vulkan-intel mesa vulkan-tools
+-  plasma-meta konsole dolphin pipewire pipewire-pulse wireplumber)
+-if ((INSTALL_DIAG)); then PKGS+=(mesa-utils iperf3); fi
++  pipewire pipewire-pulse pipewire-jack wireplumber qt6-multimedia-ffmpeg)
++if ((INSTALL_DIAG)); then BASE+=(mesa-utils iperf3); fi
++pacman -S --needed --noconfirm "${BASE[@]}"
++
++# Fase 2: desktop (plasma-desktop, niente meta-pacchetto), multimedia, extra dell'utente.
++log "Pacchetti: Plasma e desktop multimediale"
++DESKTOP=()
++read -ra plasma <<<"$PLASMA_PACKAGES"
++DESKTOP+=("${plasma[@]}")
++if ((INSTALL_MEDIA)); then
++  read -ra media <<<"$MEDIA_PACKAGES"
++  DESKTOP+=("${media[@]}")
++fi
+ if [[ -n $EXTRA_PACKAGES ]]; then
+   read -ra extra <<<"$EXTRA_PACKAGES"
+-  PKGS+=("${extra[@]}")
++  DESKTOP+=("${extra[@]}")
+ fi
+-pacman -S --needed --noconfirm "${PKGS[@]}"
++pacman -S --needed --noconfirm "${DESKTOP[@]}"
+ 
+-# SDDM: se arriva come dipendenza resta spento (tiene aperto la card e KWin fallisce).
+-systemctl disable --now sddm.service 2>/dev/null || true
+-systemctl mask sddm.service
++# Rete di sicurezza: un display manager terrebbe aperta la scheda DRM e KWin non partirebbe.
++# (plasma-desktop non ne porta, ma meglio non dipendere dalle dipendenze future.)
++for dm in sddm plasmalogin plasma-login-manager gdm lightdm; do
++  if systemctl list-unit-files "${dm}.service" --no-legend 2>/dev/null | grep -q .; then
++    systemctl disable --now "${dm}.service" 2>/dev/null || true
++    systemctl mask "${dm}.service"
++  fi
++done
+ 
+ # --- Utente, sudo, SSH -----------------------------------------------------------------
+ log "Utente '$UTENTE', sudo, SSH"
+@@ -83,6 +101,11 @@ as_user kwriteconfig6 --file powerdevilrc --group AC --group Display --key TurnO
+ as_user kwriteconfig6 --file powerdevilrc --group AC --group Display --key DimDisplayWhenIdle false
+ as_user kwriteconfig6 --file kscreenlockerrc --group Daemon --key Autolock false
+ as_user kwriteconfig6 --file kscreenlockerrc --group Daemon --key LockOnResume false
++# powerdevil è dipendenza dura di plasma-desktop: invece di toglierlo, nessuna sospensione possibile.
++systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
++if ((DISABLE_FILE_INDEXING)); then
++  as_user kwriteconfig6 --file baloofilerc --group 'Basic Settings' --key Indexing-Enabled false
++fi
+ if [[ -n $KB_LAYOUT ]]; then
+   as_user kwriteconfig6 --file kxkbrc --group Layout --key Use true
+   as_user kwriteconfig6 --file kxkbrc --group Layout --key LayoutList "$KB_LAYOUT"
+diff --git a/container/verify.sh b/container/verify.sh
+index 52b0f11..4ce8bd6 100755
+--- a/container/verify.sh
++++ b/container/verify.sh
+@@ -25,7 +25,6 @@ t_sys_rw() { findmnt -no OPTIONS /sys | grep -qw rw; }
+ t_seat_card() { loginctl seat-status seat0 | grep -q drm; }
+ t_session() { loginctl list-sessions --no-legend | awk -v u="$UTENTE" '$3==u && $4=="seat0"' | grep -q .; }
+ t_kwin() { pgrep -u "$UTENTE" kwin_wayland; }
+-t_no_sddm() { ! systemctl is-active --quiet sddm; }
+ t_va_h264() { LIBVA_DRIVER_NAME=iHD vainfo --display drm --device /dev/dri/renderD128 2>&1 | grep -Eq 'VAProfileH264.*EncSliceLP'; }
+ t_va_hevc() { LIBVA_DRIVER_NAME=iHD vainfo --display drm --device /dev/dri/renderD128 2>&1 | grep -Eq 'VAProfileHEVCMain.*EncSliceLP'; }
+ t_vulkan() { vulkaninfo --summary 2>/dev/null | grep -qi intel; }
+@@ -34,6 +33,9 @@ t_conf() { grep -Eq '^capture\s*=\s*kwin' "/home/$UTENTE/.config/sunshine/sunshi
+ t_no_tmp_sudoers() { [[ ! -e /etc/sudoers.d/99-tmp-aur-build ]]; }
+ t_uinput() { [[ -c /dev/uinput ]]; }
+ t_input() { compgen -G '/dev/input/event*'; }
++t_no_dm() { ! systemctl list-units --type=service --state=active --no-legend | grep -Eiq '(sddm|plasmalogin|plasma-login|gdm|lightdm)'; }
++t_absent() { local p; for p in "$@"; do pacman -Q "$p" &>/dev/null && return 1; done; return 0; }
++t_sleep_masked() { [[ $(systemctl is-enabled sleep.target 2>/dev/null) == masked ]]; }
+ 
+ log "Verifiche"
+ check "/sys scrivibile (rw)" t_sys_rw
+@@ -45,7 +47,11 @@ check "nodi /dev/input/event* presenti" t_input
+ check "seat0 elenca la scheda DRM" t_seat_card
+ check "sessione di $UTENTE su seat0" t_session
+ check "kwin_wayland in esecuzione" t_kwin
+-check "sddm non attivo" t_no_sddm
++check "nessun display manager attivo" t_no_dm
++check "pacchetti esclusi assenti (discover, bluedevil, plasma-nm, flatpak-kcm, plasma-meta...)" \
++  t_absent discover bluedevil plasma-nm flatpak-kcm plasma-meta plasma-firewall plasma-thunderbolt plasma-disks plasma-welcome krdp plasma-vault
++check "sospensione disattivata (sleep.target mascherato)" t_sleep_masked
++((INSTALL_MEDIA)) && check "VLC installato" pacman -Q vlc
+ check "VA-API: H.264 in codifica (EncSliceLP)" t_va_h264
+ check "VA-API: HEVC in codifica (EncSliceLP)" t_va_hevc
+ check "Vulkan vede la GPU Intel" t_vulkan
+diff --git a/install.sh b/install.sh
+index ec9a1f8..cc56469 100755
+--- a/install.sh
++++ b/install.sh
+@@ -67,7 +67,8 @@ trap 'rm -rf "$tmpdir"' EXIT
+ tar -C "$REPO_DIR" -czf "$tmpdir/setup.tgz" lib.sh container files
+ # Solo le variabili che servono dentro il container (la password non c'è).
+ for v in UTENTE IP_CT TIMEZONE LOCALE KB_LAYOUT SSH_PUBKEY SSH_DISABLE_PASSWORD \
+-  CONNETTORE RISOLUZIONE SUNSHINE_AUR_COMMIT INSTALL_DIAG EXTRA_PACKAGES; do
++  CONNETTORE RISOLUZIONE SUNSHINE_AUR_COMMIT INSTALL_DIAG EXTRA_PACKAGES \
++  PLASMA_PACKAGES INSTALL_MEDIA MEDIA_PACKAGES DISABLE_FILE_INDEXING; do
+   declare -p "$v"
+ done >"$tmpdir/config.sh"
+ 
+-- 
+2.43.0
+

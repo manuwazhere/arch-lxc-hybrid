@@ -45,3 +45,16 @@ CARD_MODE=0660
 SUNSHINE_AUR_COMMIT=""       # vuoto = ultimo commit dell'AUR; oppure fissa un hash per riproducibilità
 INSTALL_DIAG=1               # 1 = installa mesa-utils e iperf3 (diagnostica)
 EXTRA_PACKAGES=""            # pacchetti pacman aggiuntivi, separati da spazio
+
+# --- Pacchetti desktop ---------------------------------------------------------------
+# plasma-desktop invece di plasma-meta, di proposito: niente Discover, Bluetooth,
+# applet NetworkManager, firewall/thunderbolt/dischi/vault, KRDP. Un meta-pacchetto
+# non permette di togliere le sue dipendenze una per una.
+# powerdevil resta: è dipendenza dura di plasma-desktop (lo rendiamo innocuo in 01-system.sh).
+PLASMA_PACKAGES="plasma-desktop kscreen kscreenlocker kwin kpipewire xdg-desktop-portal-kde \
+plasma-pa plasma-systemmonitor kinfocenter kde-cli-tools kde-gtk-config breeze breeze-gtk \
+kdeplasma-addons drkonqi ocean-sound-theme oxygen-sounds konsole dolphin"
+INSTALL_MEDIA=1              # 1 = desktop multimediale (vedi MEDIA_PACKAGES)
+MEDIA_PACKAGES="spectacle gwenview okular ark vlc vlc-plugins-all plasma5-integration \
+ffmpegthumbs kdegraphics-thumbnailers kio-extras"
+DISABLE_FILE_INDEXING=1      # 1 = disattiva Baloo (indicizzazione file): evita picchi di CPU/disco

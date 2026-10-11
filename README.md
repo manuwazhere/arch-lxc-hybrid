@@ -50,6 +50,10 @@ files/plasma-session.service
 - **Password**: mai nel repo; chiesta a runtime o da `UTENTE_PASSWORD` (es. in `config.local.sh`).
 - **AUR**: `SUNSHINE_AUR_COMMIT` permette di fissare un commit; il PKGBUILD finisce nel log.
 - **Permessi GPU**: `renderD*` a 0666; `card*` a `CARD_MODE` (default 0660, da verificare).
+- **Desktop**: `plasma-desktop` e non `plasma-meta`, così Discover, Bluetooth, applet di rete,
+  firewall/thunderbolt/dischi/vault e KRDP non vengono installati. `powerdevil` è dipendenza dura
+  di `plasma-desktop`: resta, ma la sospensione è mascherata e lo spegnimento schermo disattivato.
+  Gli elenchi sono in `config.sh` (`PLASMA_PACKAGES`, `MEDIA_PACKAGES`). Baloo è disattivato di default.
 - **Rete**: il CT sta su `vmbr0`. Il bufferbloat dell'iliadbox e un eventuale flow control
   sulla 2,5G sono questioni a parte, non gestite qui.
 

@@ -23,20 +23,38 @@ pacman-key --populate archlinux
 pacman -Syu --noconfirm
 
 # --- Pacchetti -----------------------------------------------------------------------
-log "Pacchetti (GPU, Plasma, audio, strumenti AUR)"
-PKGS=(sudo openssh nano base-devel git
+# Fase 1: base, GPU e audio. I provider (jack, backend multimediale di Qt) li fissiamo qui,
+# così nella fase 2 pacman non deve sceglierli da solo con --noconfirm.
+log "Pacchetti: base, GPU, audio"
+BASE=(sudo openssh nano base-devel git
   intel-media-driver libva-utils vulkan-intel mesa vulkan-tools
-  plasma-meta konsole dolphin pipewire pipewire-pulse wireplumber)
-if ((INSTALL_DIAG)); then PKGS+=(mesa-utils iperf3); fi
+  pipewire pipewire-pulse pipewire-jack wireplumber qt6-multimedia-ffmpeg)
+if ((INSTALL_DIAG)); then BASE+=(mesa-utils iperf3); fi
+pacman -S --needed --noconfirm "${BASE[@]}"
+
+# Fase 2: desktop (plasma-desktop, niente meta-pacchetto), multimedia, extra dell'utente.
+log "Pacchetti: Plasma e desktop multimediale"
+DESKTOP=()
+read -ra plasma <<<"$PLASMA_PACKAGES"
+DESKTOP+=("${plasma[@]}")
+if ((INSTALL_MEDIA)); then
+  read -ra media <<<"$MEDIA_PACKAGES"
+  DESKTOP+=("${media[@]}")
+fi
 if [[ -n $EXTRA_PACKAGES ]]; then
   read -ra extra <<<"$EXTRA_PACKAGES"
-  PKGS+=("${extra[@]}")
+  DESKTOP+=("${extra[@]}")
 fi
-pacman -S --needed --noconfirm "${PKGS[@]}"
+pacman -S --needed --noconfirm "${DESKTOP[@]}"
 
-# SDDM: se arriva come dipendenza resta spento (tiene aperto la card e KWin fallisce).
-systemctl disable --now sddm.service 2>/dev/null || true
-systemctl mask sddm.service
+# Rete di sicurezza: un display manager terrebbe aperta la scheda DRM e KWin non partirebbe.
+# (plasma-desktop non ne porta, ma meglio non dipendere dalle dipendenze future.)
+for dm in sddm plasmalogin plasma-login-manager gdm lightdm; do
+  if systemctl list-unit-files "${dm}.service" --no-legend 2>/dev/null | grep -q .; then
+    systemctl disable --now "${dm}.service" 2>/dev/null || true
+    systemctl mask "${dm}.service"
+  fi
+done
 
 # --- Utente, sudo, SSH -----------------------------------------------------------------
 log "Utente '$UTENTE', sudo, SSH"
@@ -83,6 +101,11 @@ as_user kwriteconfig6 --file powerdevilrc --group AC --group Display --key TurnO
 as_user kwriteconfig6 --file powerdevilrc --group AC --group Display --key DimDisplayWhenIdle false
 as_user kwriteconfig6 --file kscreenlockerrc --group Daemon --key Autolock false
 as_user kwriteconfig6 --file kscreenlockerrc --group Daemon --key LockOnResume false
+# powerdevil è dipendenza dura di plasma-desktop: invece di toglierlo, nessuna sospensione possibile.
+systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
+if ((DISABLE_FILE_INDEXING)); then
+  as_user kwriteconfig6 --file baloofilerc --group 'Basic Settings' --key Indexing-Enabled false
+fi
 if [[ -n $KB_LAYOUT ]]; then
   as_user kwriteconfig6 --file kxkbrc --group Layout --key Use true
   as_user kwriteconfig6 --file kxkbrc --group Layout --key LayoutList "$KB_LAYOUT"

@@ -67,7 +67,8 @@ trap 'rm -rf "$tmpdir"' EXIT
 tar -C "$REPO_DIR" -czf "$tmpdir/setup.tgz" lib.sh container files
 # Solo le variabili che servono dentro il container (la password non c'è).
 for v in UTENTE IP_CT TIMEZONE LOCALE KB_LAYOUT SSH_PUBKEY SSH_DISABLE_PASSWORD \
-  CONNETTORE RISOLUZIONE SUNSHINE_AUR_COMMIT INSTALL_DIAG EXTRA_PACKAGES; do
+  CONNETTORE RISOLUZIONE SUNSHINE_AUR_COMMIT INSTALL_DIAG EXTRA_PACKAGES \
+  PLASMA_PACKAGES INSTALL_MEDIA MEDIA_PACKAGES DISABLE_FILE_INDEXING; do
   declare -p "$v"
 done >"$tmpdir/config.sh"
 
