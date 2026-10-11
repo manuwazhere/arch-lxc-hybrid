@@ -17,7 +17,7 @@ CORES=10
 MEMORY_MB=16384
 SWAP_MB=512
 DISK_GB=64
-STORAGE=local-lvm            # storage del rootfs (ATTENZIONE: verifica con `pvesm status`)
+STORAGE=local-zfs            # storage del rootfs (ATTENZIONE: verifica con `pvesm status`)
 TEMPLATE_STORAGE=local       # storage dei template (vztmpl)
 
 # --- Utente del container ----------------------------------------------------
