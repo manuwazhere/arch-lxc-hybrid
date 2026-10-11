@@ -1,0 +1,19 @@
+[Unit]
+Description=Sessione Plasma Wayland
+After=systemd-user-sessions.service systemd-logind.service systemd-udev-trigger.service
+Wants=systemd-logind.service
+
+[Service]
+User=@UTENTE@
+PAMName=login
+Environment=XDG_SESSION_TYPE=wayland
+Environment=XDG_SESSION_CLASS=user
+Environment=XDG_SEAT=seat0
+Environment=XDG_SESSION_DESKTOP=KDE
+Environment=XDG_CURRENT_DESKTOP=KDE
+ExecStart=/usr/lib/plasma-dbus-run-session-if-needed /usr/bin/startplasma-wayland
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target
