@@ -2,4 +2,3 @@ logs/
 config.local.sh
 *.log
 sunshine_state.json
-.DS_Store

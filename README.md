@@ -1,69 +1,97 @@
-# Arch Linux in LXC su Proxmox con Plasma Wayland e Sunshine
+# Arch Linux in an LXC on Proxmox with Plasma Wayland and Sunshine
 
-Desktop Arch + KDE Plasma (Wayland) in un container LXC **privileged** su Proxmox,
-iGPU Intel con driver `i915` condivisa col container, streaming con Sunshine (cattura `kwin`,
-codifica VAAPI) verso Moonlight. Niente SDDM: la sessione parte da un servizio systemd.
+🇮🇹 [Italiano](README.it.md)
 
-La procedura manuale originale è in [`docs/procedura-manuale.md`](docs/procedura-manuale.md).
+A KDE Plasma (Wayland) desktop in a **privileged** Arch Linux LXC container on Proxmox, sharing the
+host's Intel iGPU (`i915` driver), streamed with Sunshine (`kwin` capture, VAAPI encoding) to Moonlight.
+No display manager: the session is started by a systemd service. The goal is a desktop that behaves
+like a locally installed OS, with rock-solid GPU acceleration and streaming.
 
-## Requisiti
+The original manual procedure (and the table of problems met along the way) is in
+[`docs/manual-procedure.md`](docs/manual-procedure.md).
 
-- Host Proxmox con iGPU Intel che usa **`i915`** (con `xe` ci sono reset della GPU; lo script si ferma).
-- Dummy plug HDMI inserito nella porta HDMI della iGPU.
-- Container sul bridge a 1G (`vmbr0`), la stessa velocità del client Moonlight.
+## Requirements
 
-## Uso
+- Proxmox host with an Intel iGPU using the **`i915`** driver (with `xe` the GPU kept resetting on the
+  tested card; the scripts stop if they see `xe`).
+- An HDMI dummy plug in the iGPU's HDMI port.
+- The container on a bridge with the same speed as the Moonlight client (1G in the tested setup).
+- Tested on: Lenovo ThinkCentre M90q (UHD 770), Proxmox with kernel 7.0, Moonlight on a Mac.
+
+## Usage
 
 ```bash
-# sull'host Proxmox
-git clone <questo-repo> && cd arch-lxc-sunshine
-nano config.sh                # CTID, IP, storage, gateway, utente...
-./install.sh                  # chiede la password dell'utente
-./install.sh --recreate       # distrugge il CT (con conferma) e riparte da zero
+# on the Proxmox host, as root (use tmux: the install takes several minutes)
+git clone <this-repo> && cd arch-lxc-sunshine
+nano config.sh                # CTID, IP, gateway, storage, user...  (or use config.local.sh)
+./install.sh                  # asks for the user's password
+./install.sh --recreate       # destroys the CT (asks for confirmation) and starts from scratch
 ```
 
-Tutto è idempotente: puoi rilanciare `./install.sh` su un CT esistente.
-I log restano in `logs/` (ignorati da git).
+Everything is idempotent: you can re-run `./install.sh` on an existing container. Logs go to `logs/`
+(ignored by git).
 
-Fuori dallo script restano manuali: credenziali del pannello Sunshine (`https://<IP_CT>:47990`),
-pairing con Moonlight, scelta del browser.
+Personal values (gateway, DNS, locale, AUR packages...) go in `config.local.sh`, which is read after
+`config.sh` and ignored by git, so `git pull` never conflicts with your settings:
 
-## Struttura
+```bash
+# config.local.sh
+GATEWAY=192.168.1.1      # your router, NOT the DNS server
+DNS=192.168.1.53
+AUR_PACKAGES="brave-bin"
+```
+
+Still manual after the script: the Sunshine panel credentials (`https://<IP_CT>:47990`), pairing with
+Moonlight, and choosing a browser.
+
+## What it does
+
+- **Host**: checks the `i915` driver, loads `uinput`, sets the udev rule for the GPU nodes.
+- **Container**: creates it (privileged, `nesting`, `fuse`, `/dev/dri` and `/dev/input` passthrough,
+  writable `/sys`), installs the system, a user with sudo, a locale, SSH.
+- **Desktop**: `plasma-desktop` plus a multimedia set (Spectacle, Gwenview, Okular, Ark, VLC, thumbnailers).
+  No Discover, Bluetooth, NetworkManager applet, firewall/thunderbolt/disks/vault KCMs, KRDP, KWallet.
+  Baloo (file indexing) is off, suspend is disabled, screen-off and lock are off.
+- **Sunshine**: `sunshine-bin` and `yay-bin` from the AUR, `capture = kwin`, user service enabled.
+- **Session**: starts Plasma, detects the HDMI port, sets 1920x1080@60, waits for Sunshine, runs the checks.
+
+## Layout
 
 ```
-config.sh                 tutte le variabili (CTID, IP, risorse, utente, risoluzione...)
-install.sh                orchestratore, da host Proxmox
-lib.sh                    log/attese comuni
-host/setup-host.sh        controllo i915, uinput, regola udev sui nodi GPU
-host/create-ct.sh         template, pct create (privileged), righe del .conf, avvio
-container/01-system.sh    pacman, pacchetti, utente, sudo, SSH, locale, impostazioni Plasma
-container/02-sunshine.sh  sunshine-bin dall'AUR (sudo temporaneo), sunshine.conf, servizio
-container/03-session.sh   avvio Plasma, rilevamento HDMI, 1920x1080@60, attesa Sunshine
-container/verify.sh       verifiche (usabile anche da solo)
+config.sh                 all the variables (CTID, IP, resources, user, resolution, packages...)
+install.sh                orchestrator, run on the Proxmox host
+lib.sh                    shared logging/waiting helpers
+host/setup-host.sh        i915 check, uinput, udev rule for the GPU nodes
+host/create-ct.sh         template, pct create (privileged), .conf lines, start
+container/01-system.sh    pacman, packages, user, sudo, SSH, locale, Plasma settings
+container/02-sunshine.sh  yay-bin and sunshine-bin from the AUR (temporary sudo), sunshine.conf, service
+container/03-session.sh   start Plasma, detect HDMI, 1920x1080@60, wait for Sunshine
+container/aur-build.sh    builds one AUR package with makepkg (as a normal user)
+container/verify.sh       checks (also usable on its own)
 files/plasma-session.service
+docs/                     manual procedure (EN/IT)
 ```
 
-## Note di progetto
+## Design notes
 
-- **Connettore video**: `CONNETTORE=auto` cerca in `/sys/class/drm` l'uscita di tipo `HDMI-A-n`
-  (le USB-C e la DP compaiono come `DP-n`), preferendo quella `connected`.
-- **Password**: mai nel repo; chiesta a runtime o da `UTENTE_PASSWORD` (es. in `config.local.sh`).
-- **AUR**: `yay-bin` e `sunshine-bin` si compilano con `makepkg` (`SUNSHINE_AUR_COMMIT` fissa un commit di
-  Sunshine; i PKGBUILD finiscono nel log). Poi `yay -Syu` aggiorna repo e AUR insieme. Pacchetti AUR
-  extra (es. Brave) in `AUR_PACKAGES`, meglio nel proprio `config.local.sh`. Senza helper:
-  `INSTALL_AUR_HELPER=0`, e gli aggiornamenti AUR vanno fatti a mano.
-- **Permessi GPU**: `renderD*` a 0666; `card*` a `CARD_MODE` (default 0660, da verificare).
-- **Desktop**: `plasma-desktop` e non `plasma-meta`, così Discover, Bluetooth, applet di rete,
-  firewall/thunderbolt/dischi/vault e KRDP non vengono installati. `powerdevil` è dipendenza dura
-  di `plasma-desktop`: resta, ma la sospensione è mascherata e lo spegnimento schermo disattivato.
-  Gli elenchi sono in `config.sh` (`PLASMA_PACKAGES`, `MEDIA_PACKAGES`). Baloo è disattivato di default.
-- **Rete**: il CT sta su `vmbr0`. Il bufferbloat dell'iliadbox e un eventuale flow control
-  sulla 2,5G sono questioni a parte, non gestite qui.
+- **Video connector**: `CONNECTOR=auto` looks in `/sys/class/drm` for the `HDMI-A-n` output (USB-C with
+  DP alt-mode and DisplayPort show up as `DP-n`) and prefers the one that is `connected`.
+- **Password**: never in the repo; asked at runtime or taken from `CT_USER_PASSWORD`
+  (e.g. in `config.local.sh`).
+- **AUR**: `yay-bin` and `sunshine-bin` are built with `makepkg` (`SUNSHINE_AUR_COMMIT` pins a Sunshine
+  commit; the PKGBUILDs end up in the log). Afterwards `yay -Syu` updates repos and AUR together. Extra AUR
+  packages (e.g. Brave) go in `AUR_PACKAGES`. Without the helper (`INSTALL_AUR_HELPER=0`) AUR updates are manual.
+- **GPU permissions**: `renderD*` at 0666; `card*` at `CARD_MODE` (0660 by default).
+- **Network**: the CT sits on `vmbr0`. Upstream bufferbloat and any flow control on a 2.5G NIC are
+  separate topics, not handled here.
+- **Security**: the container is privileged, `/sys` is writable and the render node is world-accessible
+  on the host. That is the price of making udev, input and the GPU work; fine for a homelab, think twice
+  elsewhere.
 
-## Prova a freddo (checklist)
+## Cold-boot checklist
 
-1. `./install.sh` fino in fondo, `verify.sh` tutto OK.
-2. Pairing Moonlight, app "Desktop": immagine, mouse e tastiera, audio da YouTube.
-3. `pct reboot <CTID>`, un minuto di attesa, riconnessione.
-4. Video 4K lungo (30+ minuti) con seeding attivo: nessuna perdita di pacchetti.
-5. Con `CARD_MODE=0660`: KWin parte? In caso contrario `CARD_MODE=0666`.
+1. `./install.sh` to the end, `verify.sh` all OK.
+2. Moonlight pairing, "Desktop" app: picture, mouse and keyboard, audio from YouTube.
+3. `pct reboot <CTID>`, wait a minute, reconnect.
+4. Long 4K video (30+ minutes) with seeding active: no packet loss.
+5. With `CARD_MODE=0660`: does KWin start? If not, set `CARD_MODE=0666`.

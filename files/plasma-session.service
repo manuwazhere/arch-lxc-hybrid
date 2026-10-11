@@ -1,10 +1,10 @@
 [Unit]
-Description=Sessione Plasma Wayland
+Description=Plasma Wayland session
 After=systemd-user-sessions.service systemd-logind.service systemd-udev-trigger.service
 Wants=systemd-logind.service
 
 [Service]
-User=@UTENTE@
+User=@CT_USER@
 PAMName=login
 Environment=XDG_SESSION_TYPE=wayland
 Environment=XDG_SESSION_CLASS=user

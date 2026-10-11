@@ -1,39 +1,39 @@
 #!/usr/bin/env bash
-# Dentro il container, come root: sistema, pacchetti, utente, locale, SSH, Plasma.
-# Idempotente. Non installa SDDM né browser.
+# Inside the container, as root: system, packages, user, locale, SSH, Plasma.
+# Idempotent. Installs no display manager and no browser.
 set -Eeuo pipefail
 STAGE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=../lib.sh
 source "$STAGE/lib.sh"
 # shellcheck source=/dev/null
 source "$STAGE/config.sh"
-[[ $EUID -eq 0 ]] || die "Questo script va eseguito come root nel container."
+[[ $EUID -eq 0 ]] || die "This script must run as root inside the container."
 
-as_user() { runuser -u "$UTENTE" -- env HOME="/home/$UTENTE" "$@"; }
+as_user() { runuser -u "$CT_USER" -- env HOME="/home/$CT_USER" "$@"; }
 
-# --- pacman: niente Landlock nel kernel dell'host, chiavi, aggiornamento -------------
-log "pacman: sandbox, chiavi, aggiornamento"
+# --- pacman: no Landlock in the host kernel, keys, upgrade ----------------------------
+log "pacman: sandbox, keys, upgrade"
 if grep -qE '^#\s*DisableSandboxFilesystem' /etc/pacman.conf; then
   sed -i -E 's/^#\s*(DisableSandboxFilesystem)\s*$/\1/' /etc/pacman.conf
 fi
 grep -q '^DisableSandboxFilesystem' /etc/pacman.conf \
-  || warn "DisableSandboxFilesystem non è in pacman.conf: se pacman si lamenta di Landlock usa 'pacman --disable-sandbox'."
+  || warn "DisableSandboxFilesystem is not in pacman.conf: if pacman complains about Landlock use 'pacman --disable-sandbox'."
 pacman-key --init
 pacman-key --populate archlinux
 pacman -Syu --noconfirm
 
-# --- Pacchetti -----------------------------------------------------------------------
-# Fase 1: base, GPU e audio. I provider (jack, backend multimediale di Qt) li fissiamo qui,
-# così nella fase 2 pacman non deve sceglierli da solo con --noconfirm.
-log "Pacchetti: base, GPU, audio"
+# --- Packages ----------------------------------------------------------------------
+# Phase 1: base, GPU and audio. We pin the providers (jack, Qt multimedia backend) here,
+# so that in phase 2 pacman does not have to pick them on its own with --noconfirm.
+log "Packages: base, GPU, audio"
 BASE=(sudo openssh nano base-devel git
   intel-media-driver libva-utils vulkan-intel mesa vulkan-tools
   pipewire pipewire-pulse pipewire-jack wireplumber qt6-multimedia-ffmpeg)
 if ((INSTALL_DIAG)); then BASE+=(mesa-utils iperf3); fi
 pacman -S --needed --noconfirm "${BASE[@]}"
 
-# Fase 2: desktop (plasma-desktop, niente meta-pacchetto), multimedia, extra dell'utente.
-log "Pacchetti: Plasma e desktop multimediale"
+# Phase 2: desktop (plasma-desktop, no meta package), multimedia, user extras.
+log "Packages: Plasma and multimedia desktop"
 DESKTOP=()
 read -ra plasma <<<"$PLASMA_PACKAGES"
 DESKTOP+=("${plasma[@]}")
@@ -47,8 +47,8 @@ if [[ -n $EXTRA_PACKAGES ]]; then
 fi
 pacman -S --needed --noconfirm "${DESKTOP[@]}"
 
-# Rete di sicurezza: un display manager terrebbe aperta la scheda DRM e KWin non partirebbe.
-# (plasma-desktop non ne porta, ma meglio non dipendere dalle dipendenze future.)
+# Safety net: a display manager would hold the DRM card open and KWin would not start.
+# (plasma-desktop brings none, but let's not depend on future dependencies.)
 for dm in sddm plasmalogin plasma-login-manager gdm lightdm; do
   if systemctl list-unit-files "${dm}.service" --no-legend 2>/dev/null | grep -q .; then
     systemctl disable --now "${dm}.service" 2>/dev/null || true
@@ -56,15 +56,15 @@ for dm in sddm plasmalogin plasma-login-manager gdm lightdm; do
   fi
 done
 
-# --- Utente, sudo, SSH -----------------------------------------------------------------
-log "Utente '$UTENTE', sudo, SSH"
+# --- User, sudo, SSH ---------------------------------------------------------------
+log "User '$CT_USER', sudo, SSH"
 getent group render >/dev/null || groupadd -r render
-if id "$UTENTE" &>/dev/null; then
-  usermod -aG wheel,video,render "$UTENTE"
+if id "$CT_USER" &>/dev/null; then
+  usermod -aG wheel,video,render "$CT_USER"
 else
-  useradd -m -G wheel,video,render -s /bin/bash "$UTENTE"
+  useradd -m -G wheel,video,render -s /bin/bash "$CT_USER"
 fi
-UGRP=$(id -gn "$UTENTE")
+UGRP=$(id -gn "$CT_USER")
 
 echo '%wheel ALL=(ALL:ALL) ALL' >/etc/sudoers.d/10-wheel
 chmod 440 /etc/sudoers.d/10-wheel
@@ -72,22 +72,22 @@ visudo -c -q
 
 systemctl enable --now sshd
 if [[ -n $SSH_PUBKEY ]]; then
-  install -d -m 700 -o "$UTENTE" -g "$UGRP" "/home/$UTENTE/.ssh"
-  AK=/home/$UTENTE/.ssh/authorized_keys
+  install -d -m 700 -o "$CT_USER" -g "$UGRP" "/home/$CT_USER/.ssh"
+  AK=/home/$CT_USER/.ssh/authorized_keys
   touch "$AK"
   grep -qxF "$SSH_PUBKEY" "$AK" || echo "$SSH_PUBKEY" >>"$AK"
-  chown "$UTENTE:$UGRP" "$AK"
+  chown "$CT_USER:$UGRP" "$AK"
   chmod 600 "$AK"
   if ((SSH_DISABLE_PASSWORD)); then
     printf 'PasswordAuthentication no\n' >/etc/ssh/sshd_config.d/10-no-password.conf
     systemctl reload sshd
   fi
 elif ((SSH_DISABLE_PASSWORD)); then
-  warn "SSH_DISABLE_PASSWORD=1 ma SSH_PUBKEY è vuota: non disattivo il login con password."
+  warn "SSH_DISABLE_PASSWORD=1 but SSH_PUBKEY is empty: leaving password login enabled."
 fi
 
-# --- Locale e fuso orario --------------------------------------------------------------------
-log "Locale e fuso orario"
+# --- Locale and time zone ----------------------------------------------------------
+log "Locale and time zone"
 for l in "$LOCALE" en_US.UTF-8; do
   sed -i -E "s/^#\s*(${l//./\\.} UTF-8)/\1/" /etc/locale.gen
 done
@@ -95,27 +95,32 @@ locale-gen
 printf 'LANG=%s\n' "$LOCALE" >/etc/locale.conf
 ln -sf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime
 
-# --- Plasma: niente spegnimento schermo né blocco (scritto prima del primo avvio) ------------
-log "Impostazioni Plasma per sessione sempre attiva"
+# --- Plasma: always-on session (written before the first start) -----------------------
+log "Plasma settings for an always-on session"
 as_user kwriteconfig6 --file powerdevilrc --group AC --group Display --key TurnOffDisplayWhenIdle false
 as_user kwriteconfig6 --file powerdevilrc --group AC --group Display --key DimDisplayWhenIdle false
 as_user kwriteconfig6 --file kscreenlockerrc --group Daemon --key Autolock false
 as_user kwriteconfig6 --file kscreenlockerrc --group Daemon --key LockOnResume false
-# powerdevil è dipendenza dura di plasma-desktop: invece di toglierlo, nessuna sospensione possibile.
+# powerdevil is a hard dependency of plasma-desktop: instead of removing it, make suspend impossible.
 systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
 if ((DISABLE_FILE_INDEXING)); then
   as_user kwriteconfig6 --file baloofilerc --group 'Basic Settings' --key Indexing-Enabled false
+fi
+# KWallet is a dependency too: the session starts without a typed password, so it would
+# only ask you to create one. Disabling the subsystem keeps it out of the way.
+if ((DISABLE_KWALLET)); then
+  as_user kwriteconfig6 --file kwalletrc --group Wallet --key Enabled false
 fi
 if [[ -n $KB_LAYOUT ]]; then
   as_user kwriteconfig6 --file kxkbrc --group Layout --key Use true
   as_user kwriteconfig6 --file kxkbrc --group Layout --key LayoutList "$KB_LAYOUT"
 fi
 
-# --- Sessione Plasma Wayland senza SDDM -----------------------------------------------------
-log "Servizio plasma-session"
-sed "s/@UTENTE@/$UTENTE/g" "$STAGE/files/plasma-session.service" >/etc/systemd/system/plasma-session.service
+# --- Plasma Wayland session without a display manager -------------------------------
+log "plasma-session service"
+sed "s/@CT_USER@/$CT_USER/g" "$STAGE/files/plasma-session.service" >/etc/systemd/system/plasma-session.service
 systemctl daemon-reload
 systemctl set-default graphical.target
-systemctl enable plasma-session.service # si avvia in 03-session.sh, dopo Sunshine
+systemctl enable plasma-session.service # started in 03-session.sh, after Sunshine
 
-log "01-system completato"
+log "01-system done"

@@ -1,5 +1,8 @@
 # Plasma + Sunshine in un LXC Arch su Proxmox (iGPU Intel)
 
+> **Nota sullo stato del repo:** questo è il manuale della procedura manuale, ricostruito prima di scriptarla. Per l'installazione lo sostituiscono gli script del repo, e alcune scelte sono cambiate (solo `capture = kwin`, `plasma-desktop` al posto di `plasma-meta`, niente Chromium, Discover e KWallet, swap a 0). Resta utile per capire il *perché* di ogni passo e come tabella dei problemi incontrati.
+> English version: [manual-procedure.md](manual-procedure.md)
+
 Ricostruito dalla procedura seguita: container Arch **privileged** su host Proxmox, iGPU Intel UHD 770 con driver `i915` (con `xe` comparivano reset della GPU), dummy plug HDMI, client Moonlight su Mac con collegamento a 1G.
 
 **Segnaposto da sostituire:** `<CTID>` (ID del container), `<UTENTE>` (utente normale), `<IP_CT>` (IP del container), `<CONNETTORE>` (uscita video con il dummy plug, es. `HDMI-A-3`), `<GID_VIDEO>` e `<GID_RENDER>` (gid dei gruppi dentro il container, solo per la variante con i singoli device in 2.2).
