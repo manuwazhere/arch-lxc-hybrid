@@ -64,6 +64,11 @@ set_kv() { # key value
 }
 set_kv capture kwin
 set_kv csrf_allowed_origins "https://${IP_CT}:47990"
+# Extra options from config.sh (SUNSHINE_EXTRA="key=value key2=value2")
+read -ra extra_opts <<<"${SUNSHINE_EXTRA:-}"
+for kv in "${extra_opts[@]}"; do
+  set_kv "${kv%%=*}" "${kv#*=}"
+done
 chown "$CT_USER:$UGRP" "$CONF"
 
 # User service: starts with graphical-session.target (that is, with plasma-session).

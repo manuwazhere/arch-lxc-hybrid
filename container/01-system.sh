@@ -28,9 +28,14 @@ pacman -Syu --noconfirm
 log "Packages: base, GPU, audio"
 BASE=(sudo openssh nano base-devel git
   intel-media-driver libva-utils vulkan-intel mesa vulkan-tools
-  pipewire pipewire-pulse pipewire-jack wireplumber qt6-multimedia-ffmpeg)
+  pipewire pipewire-pulse pipewire-jack wireplumber qt6-multimedia-ffmpeg
+  avahi)
 if ((INSTALL_DIAG)); then BASE+=(mesa-utils iperf3); fi
 pacman -S --needed --noconfirm "${BASE[@]}"
+
+# Sunshine announces itself over mDNS. Without the daemon it logs "Failed to create client"
+# and Moonlight cannot discover the host on its own.
+systemctl enable --now avahi-daemon
 
 # Phase 2: desktop (plasma-desktop, no meta package), multimedia, user extras.
 log "Packages: Plasma and multimedia desktop"

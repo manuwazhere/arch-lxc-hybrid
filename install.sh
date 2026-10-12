@@ -67,7 +67,7 @@ trap 'rm -rf "$tmpdir"' EXIT
 tar -C "$REPO_DIR" -czf "$tmpdir/setup.tgz" lib.sh container files
 # Only the variables needed inside the container (the password is not among them).
 for v in CT_USER IP_CT TIMEZONE LOCALE KB_LAYOUT SSH_PUBKEY SSH_DISABLE_PASSWORD \
-  CONNECTOR RESOLUTION SUNSHINE_AUR_COMMIT INSTALL_DIAG EXTRA_PACKAGES \
+  CONNECTOR RESOLUTION SUNSHINE_AUR_COMMIT SUNSHINE_EXTRA INSTALL_DIAG EXTRA_PACKAGES \
   PLASMA_PACKAGES INSTALL_MEDIA MEDIA_PACKAGES DISABLE_FILE_INDEXING DISABLE_KWALLET \
   INSTALL_AUR_HELPER AUR_PACKAGES; do
   declare -p "$v"
@@ -101,4 +101,7 @@ Done. Manual steps left:
   2. In Moonlight add the host ${IP_CT}, read the PIN and enter it in the panel (PIN tab).
   3. Start the "Desktop" app. Cold-boot test: pct reboot ${CTID}, wait ~1 minute, reconnect.
   4. Install the browser you prefer (pacman, or yay for the AUR).
+
+After a --recreate, ssh will warn "REMOTE HOST IDENTIFICATION HAS CHANGED": that is expected
+(the container has new host keys). Verify the fingerprint, then: ssh-keygen -R ${IP_CT}
 EOF

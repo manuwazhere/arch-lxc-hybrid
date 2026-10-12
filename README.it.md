@@ -83,6 +83,13 @@ docs/                     procedura manuale (EN/IT)
   extra (es. Brave) in `AUR_PACKAGES`. Senza helper (`INSTALL_AUR_HELPER=0`) gli aggiornamenti AUR vanno
   fatti a mano.
 - **Permessi GPU**: `renderD*` a 0666; `card*` a `CARD_MODE` (0660 di default).
+- **Indirizzi**: l'ultimo ottetto dell'IP coincide con l'ID del CT (`.200` per il CT 200), fuori dal pool
+  DHCP del router. `create-ct.sh` si rifiuta di creare il container se l'indirizzo è già configurato in
+  un altro CT/VM o risponde al ping: un IP duplicato faceva arrivare il traffico alla macchina sbagliata,
+  e si vedeva solo da fuori dalla LAN.
+- **Opzioni di Sunshine**: `SUNSHINE_EXTRA="hevc_mode=3"` (chiave=valore, separati da spazio) finisce in
+  `sunshine.conf`; `hevc_mode=3` annuncia HEVC Main10 (10 bit). `avahi` è installato perché Sunshine
+  possa annunciarsi via mDNS.
 - **Rete**: il CT sta su `vmbr0`. Il bufferbloat a monte e un eventuale flow control su una scheda a 2,5G
   sono questioni a parte, non gestite qui.
 - **Sicurezza**: il container è privileged, `/sys` è scrivibile e il render node è accessibile a tutti
@@ -96,3 +103,13 @@ docs/                     procedura manuale (EN/IT)
 3. `pct reboot <CTID>`, un minuto di attesa, riconnessione.
 4. Video 4K lungo (30+ minuti) con seeding attivo: nessuna perdita di pacchetti.
 5. Con `CARD_MODE=0660`: KWin parte? In caso contrario `CARD_MODE=0666`.
+
+## Limiti noti
+
+- **Codifica AV1**: non disponibile sulla UHD 770 (Sunshine non trova un entrypoint di codifica AV1 utilizzabile).
+- **YUV 4:4:4**: non offerto con il percorso VAAPI nei nostri test: la GPU elenca i profili HEVC 4:4:4 in
+  `vainfo`, ma Sunshine non li usa (è una funzione per singolo encoder, e il 4:4:4 lato host su Linux è
+  stato un lavoro in corso a monte).
+- **Bitrate**: con Moonlight a 20 Mbit/s, Sunshine registra "Streaming bitrate is 14988000" (circa il 75%);
+  con 40 Mbit/s circa 30. Osservato, non spiegato qui.
+- **Appunti condivisi** tra container e client: non disponibili con Sunshine e Moonlight originali.

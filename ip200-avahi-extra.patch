@@ -1,0 +1,175 @@
+From a5e20bec4f303b0f117b38418ae27e4956ef4a66 Mon Sep 17 00:00:00 2001
+From: Manu <manu@localhost>
+Date: Mon, 12 Oct 2026 20:11:46 +0000
+Subject: [PATCH] ID/IP 200, IP conflict check, avahi, SUNSHINE_EXTRA
+ (hevc_mode=3), known limitations
+
+---
+ README.it.md             | 17 +++++++++++++++++
+ README.md                | 18 ++++++++++++++++++
+ config.sh                |  6 ++++--
+ container/01-system.sh   |  7 ++++++-
+ container/02-sunshine.sh |  5 +++++
+ container/verify.sh      |  8 ++++++++
+ host/create-ct.sh        | 17 +++++++++++++++++
+ install.sh               |  5 ++++-
+ 8 files changed, 79 insertions(+), 4 deletions(-)
+
+diff --git a/README.it.md b/README.it.md
+index 191cfff..a877f2f 100644
+--- a/README.it.md
++++ b/README.it.md
+@@ -85,2 +85,9 @@ docs/                     procedura manuale (EN/IT)
+ - **Permessi GPU**: `renderD*` a 0666; `card*` a `CARD_MODE` (0660 di default).
++- **Indirizzi**: l'ultimo ottetto dell'IP coincide con l'ID del CT (`.200` per il CT 200), fuori dal pool
++  DHCP del router. `create-ct.sh` si rifiuta di creare il container se l'indirizzo è già configurato in
++  un altro CT/VM o risponde al ping: un IP duplicato faceva arrivare il traffico alla macchina sbagliata,
++  e si vedeva solo da fuori dalla LAN.
++- **Opzioni di Sunshine**: `SUNSHINE_EXTRA="hevc_mode=3"` (chiave=valore, separati da spazio) finisce in
++  `sunshine.conf`; `hevc_mode=3` annuncia HEVC Main10 (10 bit). `avahi` è installato perché Sunshine
++  possa annunciarsi via mDNS.
+ - **Rete**: il CT sta su `vmbr0`. Il bufferbloat a monte e un eventuale flow control su una scheda a 2,5G
+@@ -98 +105,11 @@ docs/                     procedura manuale (EN/IT)
+ 5. Con `CARD_MODE=0660`: KWin parte? In caso contrario `CARD_MODE=0666`.
++
++## Limiti noti
++
++- **Codifica AV1**: non disponibile sulla UHD 770 (Sunshine non trova un entrypoint di codifica AV1 utilizzabile).
++- **YUV 4:4:4**: non offerto con il percorso VAAPI nei nostri test: la GPU elenca i profili HEVC 4:4:4 in
++  `vainfo`, ma Sunshine non li usa (è una funzione per singolo encoder, e il 4:4:4 lato host su Linux è
++  stato un lavoro in corso a monte).
++- **Bitrate**: con Moonlight a 20 Mbit/s, Sunshine registra "Streaming bitrate is 14988000" (circa il 75%);
++  con 40 Mbit/s circa 30. Osservato, non spiegato qui.
++- **Appunti condivisi** tra container e client: non disponibili con Sunshine e Moonlight originali.
+diff --git a/README.md b/README.md
+index 5eb2bb3..d3c461d 100644
+--- a/README.md
++++ b/README.md
+@@ -84,2 +84,9 @@ docs/                     manual procedure (EN/IT)
+ - **GPU permissions**: `renderD*` at 0666; `card*` at `CARD_MODE` (0660 by default).
++- **Addressing**: the last octet of the IP matches the CT ID (`.200` for CT 200), outside the router's
++  DHCP pool. `create-ct.sh` refuses to create the container if the address is already configured in
++  another CT/VM or answers to ping: a duplicate IP made traffic go to the wrong machine, and it only
++  showed up from outside the LAN.
++- **Sunshine options**: `SUNSHINE_EXTRA="hevc_mode=3"` (key=value, space separated) goes into
++  `sunshine.conf`; `hevc_mode=3` advertises HEVC Main10 (10-bit). `avahi` is installed so Sunshine can
++  announce itself over mDNS.
+ - **Network**: the CT sits on `vmbr0`. Upstream bufferbloat and any flow control on a 2.5G NIC are
+@@ -97 +104,12 @@ docs/                     manual procedure (EN/IT)
+ 5. With `CARD_MODE=0660`: does KWin start? If not, set `CARD_MODE=0666`.
++
++## Known limitations
++
++- **AV1 encoding** is not available on the UHD 770 (Sunshine finds no usable AV1 encoding entrypoint).
++- **YUV 4:4:4** is not offered with the VAAPI path in our tests: the GPU lists the HEVC 4:4:4 profiles
++  in `vainfo`, but Sunshine does not use them (it is a per-encoder feature, and host-side 4:4:4 on Linux
++  has been a work in progress upstream).
++- **Bitrate**: with Moonlight set to 20 Mbit/s, Sunshine logged "Streaming bitrate is 14988000" (about
++  75%); with 40 Mbit/s, about 30. Observed, not explained here.
++- **Clipboard sharing** between the container and the client is not available with stock Sunshine and
++  Moonlight.
+diff --git a/config.sh b/config.sh
+index c651c2c..c000284 100644
+--- a/config.sh
++++ b/config.sh
+@@ -7,4 +7,4 @@
+ # --- Container ---------------------------------------------------------------
+-CTID=201
+-IP_CT=192.168.1.201
++CTID=200                     # convention: same number as the last octet of IP_CT
++IP_CT=192.168.1.200          # must be unique and OUTSIDE the router's DHCP pool (create-ct.sh checks)
+ CIDR=24
+@@ -45,2 +45,4 @@ CARD_MODE=0660
+ SUNSHINE_AUR_COMMIT=""       # empty = latest AUR commit; or pin a hash for reproducibility
++SUNSHINE_EXTRA="hevc_mode=3"  # extra sunshine.conf options, space separated key=value;
++                             # hevc_mode=3 also advertises HEVC Main10 (10-bit). Empty = none
+ INSTALL_DIAG=1               # 1 = install mesa-utils and iperf3 (diagnostics)
+diff --git a/container/01-system.sh b/container/01-system.sh
+index 2071019..183eb50 100755
+--- a/container/01-system.sh
++++ b/container/01-system.sh
+@@ -30,3 +30,4 @@ BASE=(sudo openssh nano base-devel git
+   intel-media-driver libva-utils vulkan-intel mesa vulkan-tools
+-  pipewire pipewire-pulse pipewire-jack wireplumber qt6-multimedia-ffmpeg)
++  pipewire pipewire-pulse pipewire-jack wireplumber qt6-multimedia-ffmpeg
++  avahi)
+ if ((INSTALL_DIAG)); then BASE+=(mesa-utils iperf3); fi
+@@ -34,2 +35,6 @@ pacman -S --needed --noconfirm "${BASE[@]}"
+ 
++# Sunshine announces itself over mDNS. Without the daemon it logs "Failed to create client"
++# and Moonlight cannot discover the host on its own.
++systemctl enable --now avahi-daemon
++
+ # Phase 2: desktop (plasma-desktop, no meta package), multimedia, user extras.
+diff --git a/container/02-sunshine.sh b/container/02-sunshine.sh
+index fe947a3..ab9a01a 100755
+--- a/container/02-sunshine.sh
++++ b/container/02-sunshine.sh
+@@ -66,2 +66,7 @@ set_kv capture kwin
+ set_kv csrf_allowed_origins "https://${IP_CT}:47990"
++# Extra options from config.sh (SUNSHINE_EXTRA="key=value key2=value2")
++read -ra extra_opts <<<"${SUNSHINE_EXTRA:-}"
++for kv in "${extra_opts[@]}"; do
++  set_kv "${kv%%=*}" "${kv#*=}"
++done
+ chown "$CT_USER:$UGRP" "$CONF"
+diff --git a/container/verify.sh b/container/verify.sh
+index 322ebf6..f3388cc 100755
+--- a/container/verify.sh
++++ b/container/verify.sh
+@@ -34,2 +34,8 @@ t_no_tmp_sudoers() { [[ ! -e /etc/sudoers.d/99-tmp-aur-build ]]; }
+ t_uinput() { [[ -c /dev/uinput ]]; }
++t_avahi() { systemctl is-active --quiet avahi-daemon; }
++t_extra_opts() {
++  local kv conf="/home/$CT_USER/.config/sunshine/sunshine.conf" opts
++  read -ra opts <<<"${SUNSHINE_EXTRA:-}"
++  for kv in "${opts[@]}"; do grep -Eq "^${kv%%=*}\\s*=\\s*${kv#*=}\\s*$" "$conf" || return 1; done
++}
+ t_input() { compgen -G '/dev/input/event*'; }
+@@ -60,2 +66,4 @@ check "Vulkan sees the Intel GPU" t_vulkan
+ check "sunshine.conf: capture = kwin" t_conf
++check "sunshine.conf: extra options (${SUNSHINE_EXTRA:-none})" t_extra_opts
++check "avahi-daemon active (mDNS announcement)" t_avahi
+ check "Sunshine listening (47989)" t_port 47989
+diff --git a/host/create-ct.sh b/host/create-ct.sh
+index 81ff72c..280df54 100755
+--- a/host/create-ct.sh
++++ b/host/create-ct.sh
+@@ -45,2 +45,19 @@ fi
+ 
++# Refuse to create the container on an address that is already taken. A duplicate IP makes
++# traffic go to the wrong machine depending on who answered ARP last: it worked from the LAN
++# and failed only from outside, which made it very hard to spot.
++check_ip_free() {
++  local f ip_re=${IP_CT//./\\.} used=()
++  for f in /etc/pve/lxc/*.conf /etc/pve/qemu-server/*.conf; do
++    [[ -e $f && $f != "$CONF" ]] || continue
++    if grep -qE "ip=${ip_re}(/|,|$)" "$f"; then used+=("$f"); fi
++  done
++  ((${#used[@]} == 0)) || die "IP $IP_CT is already configured in: ${used[*]}"
++  if ping -c1 -W1 "$IP_CT" &>/dev/null; then
++    die "$IP_CT already answers on the network (another device, or a guest using DHCP). Pick a free address outside the router's DHCP pool."
++  fi
++}
++log "Checking that $IP_CT is free"
++check_ip_free
++
+ # --- Arch template -------------------------------------------------------------------
+diff --git a/install.sh b/install.sh
+index 5bc8876..0b14c5d 100755
+--- a/install.sh
++++ b/install.sh
+@@ -69,3 +69,3 @@ tar -C "$REPO_DIR" -czf "$tmpdir/setup.tgz" lib.sh container files
+ for v in CT_USER IP_CT TIMEZONE LOCALE KB_LAYOUT SSH_PUBKEY SSH_DISABLE_PASSWORD \
+-  CONNECTOR RESOLUTION SUNSHINE_AUR_COMMIT INSTALL_DIAG EXTRA_PACKAGES \
++  CONNECTOR RESOLUTION SUNSHINE_AUR_COMMIT SUNSHINE_EXTRA INSTALL_DIAG EXTRA_PACKAGES \
+   PLASMA_PACKAGES INSTALL_MEDIA MEDIA_PACKAGES DISABLE_FILE_INDEXING DISABLE_KWALLET \
+@@ -103,2 +103,5 @@ Done. Manual steps left:
+   4. Install the browser you prefer (pacman, or yay for the AUR).
++
++After a --recreate, ssh will warn "REMOTE HOST IDENTIFICATION HAS CHANGED": that is expected
++(the container has new host keys). Verify the fingerprint, then: ssh-keygen -R ${IP_CT}
+ EOF
+-- 
+2.43.0
+

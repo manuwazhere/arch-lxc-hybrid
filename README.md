@@ -82,6 +82,13 @@ docs/                     manual procedure (EN/IT)
   commit; the PKGBUILDs end up in the log). Afterwards `yay -Syu` updates repos and AUR together. Extra AUR
   packages (e.g. Brave) go in `AUR_PACKAGES`. Without the helper (`INSTALL_AUR_HELPER=0`) AUR updates are manual.
 - **GPU permissions**: `renderD*` at 0666; `card*` at `CARD_MODE` (0660 by default).
+- **Addressing**: the last octet of the IP matches the CT ID (`.200` for CT 200), outside the router's
+  DHCP pool. `create-ct.sh` refuses to create the container if the address is already configured in
+  another CT/VM or answers to ping: a duplicate IP made traffic go to the wrong machine, and it only
+  showed up from outside the LAN.
+- **Sunshine options**: `SUNSHINE_EXTRA="hevc_mode=3"` (key=value, space separated) goes into
+  `sunshine.conf`; `hevc_mode=3` advertises HEVC Main10 (10-bit). `avahi` is installed so Sunshine can
+  announce itself over mDNS.
 - **Network**: the CT sits on `vmbr0`. Upstream bufferbloat and any flow control on a 2.5G NIC are
   separate topics, not handled here.
 - **Security**: the container is privileged, `/sys` is writable and the render node is world-accessible
@@ -95,3 +102,14 @@ docs/                     manual procedure (EN/IT)
 3. `pct reboot <CTID>`, wait a minute, reconnect.
 4. Long 4K video (30+ minutes) with seeding active: no packet loss.
 5. With `CARD_MODE=0660`: does KWin start? If not, set `CARD_MODE=0666`.
+
+## Known limitations
+
+- **AV1 encoding** is not available on the UHD 770 (Sunshine finds no usable AV1 encoding entrypoint).
+- **YUV 4:4:4** is not offered with the VAAPI path in our tests: the GPU lists the HEVC 4:4:4 profiles
+  in `vainfo`, but Sunshine does not use them (it is a per-encoder feature, and host-side 4:4:4 on Linux
+  has been a work in progress upstream).
+- **Bitrate**: with Moonlight set to 20 Mbit/s, Sunshine logged "Streaming bitrate is 14988000" (about
+  75%); with 40 Mbit/s, about 30. Observed, not explained here.
+- **Clipboard sharing** between the container and the client is not available with stock Sunshine and
+  Moonlight.

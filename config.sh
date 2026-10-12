@@ -5,8 +5,8 @@
 # =============================================================================
 
 # --- Container ---------------------------------------------------------------
-CTID=201
-IP_CT=192.168.1.201
+CTID=200                     # convention: same number as the last octet of IP_CT
+IP_CT=192.168.1.200          # must be unique and OUTSIDE the router's DHCP pool (create-ct.sh checks)
 CIDR=24
 GATEWAY=192.168.1.1          # WARNING: your LAN's real gateway (the router), NOT the DNS server
 DNS=192.168.1.1
@@ -43,6 +43,8 @@ CARD_MODE=0660
 
 # --- Miscellaneous -----------------------------------------------------------
 SUNSHINE_AUR_COMMIT=""       # empty = latest AUR commit; or pin a hash for reproducibility
+SUNSHINE_EXTRA="hevc_mode=3"  # extra sunshine.conf options, space separated key=value;
+                             # hevc_mode=3 also advertises HEVC Main10 (10-bit). Empty = none
 INSTALL_DIAG=1               # 1 = install mesa-utils and iperf3 (diagnostics)
 EXTRA_PACKAGES=""            # extra pacman packages, space separated
 

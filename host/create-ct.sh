@@ -43,6 +43,23 @@ if pct status "$CTID" &>/dev/null; then
   fi
 fi
 
+# Refuse to create the container on an address that is already taken. A duplicate IP makes
+# traffic go to the wrong machine depending on who answered ARP last: it worked from the LAN
+# and failed only from outside, which made it very hard to spot.
+check_ip_free() {
+  local f ip_re=${IP_CT//./\\.} used=()
+  for f in /etc/pve/lxc/*.conf /etc/pve/qemu-server/*.conf; do
+    [[ -e $f && $f != "$CONF" ]] || continue
+    if grep -qE "ip=${ip_re}(/|,|$)" "$f"; then used+=("$f"); fi
+  done
+  ((${#used[@]} == 0)) || die "IP $IP_CT is already configured in: ${used[*]}"
+  if ping -c1 -W1 "$IP_CT" &>/dev/null; then
+    die "$IP_CT already answers on the network (another device, or a guest using DHCP). Pick a free address outside the router's DHCP pool."
+  fi
+}
+log "Checking that $IP_CT is free"
+check_ip_free
+
 # --- Arch template -------------------------------------------------------------------
 log "Arch template"
 pveam update >/dev/null
