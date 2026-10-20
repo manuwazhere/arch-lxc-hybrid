@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Inside the container, as root: installs yay-bin and sunshine-bin (AUR), sets capture = kwin,
-# enables the user service for all users (it starts with the graphical session).
+# Inside the container, as root: installs yay-bin and sunshine-bin (AUR), sets the capture backend
+# (kwin for Plasma, wlr for Hyprland), enables the user service for all users (it starts with the
+# graphical session).
 set -Eeuo pipefail
 STAGE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=../lib.sh
@@ -8,6 +9,8 @@ source "$STAGE/lib.sh"
 # shellcheck source=/dev/null
 source "$STAGE/config.sh"
 [[ $EUID -eq 0 ]] || die "This script must run as root inside the container."
+DESKTOP=${DESKTOP:-plasma}
+[[ $DESKTOP == hyprland ]] && CAPTURE=wlr || CAPTURE=kwin
 
 TMP_SUDOERS=/etc/sudoers.d/99-tmp-aur-build
 cleanup() { rm -f "$TMP_SUDOERS"; }
@@ -62,7 +65,7 @@ set_kv() { # key value
     echo "$1 = $2" >>"$CONF"
   fi
 }
-set_kv capture kwin
+set_kv capture "$CAPTURE"
 set_kv csrf_allowed_origins "https://${IP_CT}:47990"
 # Extra options from config.sh (SUNSHINE_EXTRA="key=value key2=value2")
 read -ra extra_opts <<<"${SUNSHINE_EXTRA:-}"
@@ -71,7 +74,8 @@ for kv in "${extra_opts[@]}"; do
 done
 chown "$CT_USER:$UGRP" "$CONF"
 
-# User service: starts with graphical-session.target (that is, with plasma-session).
+# User service: starts with graphical-session.target (Plasma brings it up itself; under Hyprland
+# it is hyprland-session.target, started from hyprland.lua).
 UNIT=app-dev.lizardbyte.app.Sunshine.service
 if [[ -f /usr/lib/systemd/user/$UNIT ]]; then
   systemctl --global enable "$UNIT" || warn "Could not enable $UNIT: enable it by hand with 'systemctl --user enable --now $UNIT'"

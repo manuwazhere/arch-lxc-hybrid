@@ -2,9 +2,9 @@
 
 🇬🇧 [English](README.md)
 
-Un desktop KDE Plasma (Wayland) in un container LXC Arch Linux **privileged** su Proxmox, che condivide
-la iGPU Intel dell'host (driver `i915`), con streaming tramite Sunshine (cattura `kwin`, codifica VAAPI)
-verso Moonlight. Niente display manager: la sessione parte da un servizio systemd. L'obiettivo è un
+Un desktop KDE Plasma o Hyprland (Wayland) in un container LXC Arch Linux **privileged** su Proxmox, che
+condivide la iGPU Intel dell'host (driver `i915`), con streaming tramite Sunshine (codifica VAAPI; cattura
+`kwin` per Plasma, `wlr` per Hyprland) verso Moonlight. Niente display manager: la sessione parte da un servizio systemd. L'obiettivo è un
 desktop che si comporta come un SO installato in locale, con accelerazione GPU e streaming solidi.
 
 La procedura manuale originale (con la tabella dei problemi incontrati) è in
@@ -41,6 +41,21 @@ DNS=192.168.1.53
 AUR_PACKAGES="brave-bin"
 ```
 
+### Scelta del desktop
+
+`DESKTOP=plasma` (default) oppure `DESKTOP=hyprland`, in `config.sh` o `config.local.sh`. Tutto ciò che
+sta sotto il desktop è in comune: host, container, GPU, servizio di sessione senza display manager,
+Sunshine, rilevamento del connettore, verifiche. Cambiano solo pacchetti, unit di sessione e backend di cattura.
+
+- **plasma**: `plasma-desktop` + set multimediale, `capture = kwin`.
+- **hyprland**: Hyprland essenziale (serve la **>= 0.55**, la config generata è in Lua) con foot, fuzzel,
+  portal, clipboard e strumenti per screenshot, `capture = wlr`. `~/.config/hypr/hyprland.lua` viene creato
+  solo se manca; `~/.config/hypr/monitors.lua` (uscita e modo) è rigenerato a ogni esecuzione. Hyprland
+  avvia `hyprland-session.target`, che attiva `graphical-session.target` e con esso il servizio utente di
+  Sunshine. Tasti: `Super+Invio` terminale, `Super+Spazio` launcher, `Super+Q` chiudi.
+
+Per provare l'altro desktop usa un CT nuovo (`CTID`/`IP_CT`, vedi la nota "Indirizzi") o `--recreate`.
+
 Restano manuali: le credenziali del pannello Sunshine (`https://<IP_CT>:47990`), il pairing con
 Moonlight e la scelta del browser.
 
@@ -49,12 +64,14 @@ Moonlight e la scelta del browser.
 - **Host**: controlla il driver `i915`, carica `uinput`, imposta la regola udev per i nodi della GPU.
 - **Container**: lo crea (privileged, `nesting`, `fuse`, passthrough di `/dev/dri` e `/dev/input`,
   `/sys` scrivibile), installa il sistema, un utente con sudo, il locale, SSH.
-- **Desktop**: `plasma-desktop` più un set multimediale (Spectacle, Gwenview, Okular, Ark, VLC, anteprime).
+- **Desktop** (`DESKTOP=plasma`): `plasma-desktop` più un set multimediale (Spectacle, Gwenview, Okular, Ark, VLC, anteprime).
   Niente Discover, Bluetooth, applet NetworkManager, KCM di firewall/thunderbolt/dischi/vault, KRDP,
   KWallet. Baloo (indicizzazione file) è spento, la sospensione è disattivata, spegnimento schermo e
   blocco sono disattivati.
-- **Sunshine**: `sunshine-bin` e `yay-bin` dall'AUR, `capture = kwin`, servizio utente abilitato.
-- **Sessione**: avvia Plasma, rileva la porta HDMI, imposta 1920x1080@60, attende Sunshine, esegue le verifiche.
+- **Desktop** (`DESKTOP=hyprland`): Hyprland e pochi strumenti Wayland (vedi `HYPRLAND_PACKAGES`), più un
+  set multimediale (mpv, VLC, imv, Evince, Nautilus...). In entrambi i casi la sospensione è disattivata.
+- **Sunshine**: `sunshine-bin` e `yay-bin` dall'AUR, `capture = kwin` (Plasma) o `wlr` (Hyprland), servizio utente abilitato.
+- **Sessione**: avvia il desktop, rileva la porta HDMI, imposta 1920x1080@60, attende Sunshine, esegue le verifiche.
 
 ## Struttura
 
@@ -64,12 +81,12 @@ install.sh                orchestratore, da host Proxmox
 lib.sh                    funzioni comuni di log e attesa
 host/setup-host.sh        controllo i915, uinput, regola udev per i nodi GPU
 host/create-ct.sh         template, pct create (privileged), righe del .conf, avvio
-container/01-system.sh    pacman, pacchetti, utente, sudo, SSH, locale, impostazioni Plasma
+container/01-system.sh    pacman, pacchetti, utente, sudo, SSH, locale, impostazioni desktop (Plasma o Hyprland)
 container/02-sunshine.sh  yay-bin e sunshine-bin dall'AUR (sudo temporaneo), sunshine.conf, servizio
-container/03-session.sh   avvio Plasma, rilevamento HDMI, 1920x1080@60, attesa Sunshine
+container/03-session.sh   avvio sessione, rilevamento HDMI, 1920x1080@60, attesa Sunshine
 container/aur-build.sh    compila un pacchetto AUR con makepkg (da utente normale)
 container/verify.sh       verifiche (usabile anche da solo)
-files/plasma-session.service
+files/plasma-session.service, hyprland-session.service/.target, hyprland.lua
 docs/                     procedura manuale (EN/IT)
 ```
 
@@ -102,7 +119,7 @@ docs/                     procedura manuale (EN/IT)
 2. Pairing Moonlight, app "Desktop": immagine, mouse e tastiera, audio da YouTube.
 3. `pct reboot <CTID>`, un minuto di attesa, riconnessione.
 4. Video 4K lungo (30+ minuti) con seeding attivo: nessuna perdita di pacchetti.
-5. Con `CARD_MODE=0660`: KWin parte? In caso contrario `CARD_MODE=0666`.
+5. Con `CARD_MODE=0660`: KWin (o Hyprland) parte? In caso contrario `CARD_MODE=0666`.
 
 ## Limiti noti
 

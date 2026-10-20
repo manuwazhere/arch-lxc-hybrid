@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Inside the container, as root: starts the Plasma session, detects the HDMI port
-# (dummy plug), sets the resolution and waits for Sunshine to listen.
+# Inside the container, as root: starts the desktop session (Plasma or Hyprland), detects the
+# HDMI port (dummy plug), sets the resolution and waits for Sunshine to listen.
 set -Eeuo pipefail
 STAGE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 # shellcheck source=../lib.sh
@@ -8,8 +8,11 @@ source "$STAGE/lib.sh"
 # shellcheck source=/dev/null
 source "$STAGE/config.sh"
 [[ $EUID -eq 0 ]] || die "This script must run as root inside the container."
+DESKTOP=${DESKTOP:-plasma}
+[[ $DESKTOP == plasma || $DESKTOP == hyprland ]] || die "Invalid DESKTOP: '$DESKTOP' (plasma or hyprland)"
 
 UID_U=$(id -u "$CT_USER")
+UGRP=$(id -gn "$CT_USER")
 RT=/run/user/$UID_U
 
 # kscreen-doctor as the user, with the environment of a graphical session.
@@ -20,7 +23,21 @@ kd() {
 }
 strip_ansi() { sed -E 's/\x1b\[[0-9;]*m//g'; }
 
-# The DRM connector name (card1-HDMI-A-3) matches what KWin sees (HDMI-A-3).
+# hyprctl as the user, aimed at the newest running Hyprland instance.
+hypr_sig() {
+  local d newest=""
+  for d in "$RT"/hypr/*/; do
+    [[ -d $d ]] || continue
+    if [[ -z $newest || $d -nt $newest ]]; then newest=$d; fi
+  done
+  [[ -n $newest ]] && basename "$newest"
+}
+hc() {
+  runuser -u "$CT_USER" -- env HOME="/home/$CT_USER" XDG_RUNTIME_DIR="$RT" \
+    HYPRLAND_INSTANCE_SIGNATURE="$(hypr_sig)" hyprctl "$@"
+}
+
+# The DRM connector name (card1-HDMI-A-3) matches what the compositor sees (HDMI-A-3).
 # On the M90q the only HDMI port is the only "HDMI-A" connector: the USB-C ports with
 # DP alt-mode and the DisplayPort show up as "DP-n", so the type is enough to tell them apart.
 detect_connector() {
@@ -46,35 +63,82 @@ detect_connector() {
   fi
 }
 
-# --- Start the session ------------------------------------------------------------------
-log "Starting plasma-session"
-systemctl start plasma-session.service
-wait_for 120 "KWin's Wayland socket" test -S "$RT/wayland-0" \
-  || die "KWin did not start: see 'journalctl -u plasma-session -b' (card busy? dummy plug?)"
+resolve_connector() {
+  if [[ $CONNECTOR == auto ]]; then
+    CONN=$(detect_connector) || die "Could not find the HDMI port: set CONNECTOR in config.sh."
+  else
+    CONN=$CONNECTOR
+  fi
+  log "Video connector: $CONN"
+  res=${RESOLUTION%@*}
+  hz=${RESOLUTION#*@}
+}
 
-# --- Connector and resolution -------------------------------------------------------------
-if [[ $CONNECTOR == auto ]]; then
-  CONN=$(detect_connector) || die "Could not find the HDMI port: set CONNECTOR in config.sh."
-else
-  CONN=$CONNECTOR
-fi
-log "Video connector: $CONN"
+# --- Plasma ---------------------------------------------------------------------------------
+session_plasma() {
+  log "Starting plasma-session"
+  systemctl start plasma-session.service
+  wait_for 120 "KWin's Wayland socket" test -S "$RT/wayland-0" \
+    || die "KWin did not start: see 'journalctl -u plasma-session -b' (card busy? dummy plug?)"
 
-has_output() { kd -o 2>/dev/null | strip_ansi | grep -qw "$CONN"; }
-wait_for 60 "output $CONN visible to KWin" has_output \
-  || warn "KWin does not list $CONN: the resolution may not be applied."
+  resolve_connector
 
-log "Setting $RESOLUTION on $CONN"
-kd "output.${CONN}.mode.${RESOLUTION}" || warn "kscreen-doctor rejected the mode $RESOLUTION."
-sleep 2
-res=${RESOLUTION%@*}
-hz=${RESOLUTION#*@}
-if kd -o 2>/dev/null | strip_ansi | grep -Eq "[0-9]+:${res}@${hz}[0-9.]*\*"; then
-  log "Active mode: $RESOLUTION"
-else
-  warn "Mode $RESOLUTION is not active (the dummy plug may not offer it). Visible modes:"
-  kd -o 2>/dev/null | strip_ansi | grep -i 'modes' || true
-fi
+  has_output() { kd -o 2>/dev/null | strip_ansi | grep -qw "$CONN"; }
+  wait_for 60 "output $CONN visible to KWin" has_output \
+    || warn "KWin does not list $CONN: the resolution may not be applied."
+
+  log "Setting $RESOLUTION on $CONN"
+  kd "output.${CONN}.mode.${RESOLUTION}" || warn "kscreen-doctor rejected the mode $RESOLUTION."
+  sleep 2
+  if kd -o 2>/dev/null | strip_ansi | grep -Eq "[0-9]+:${res}@${hz}[0-9.]*\*"; then
+    log "Active mode: $RESOLUTION"
+  else
+    warn "Mode $RESOLUTION is not active (the dummy plug may not offer it). Visible modes:"
+    kd -o 2>/dev/null | strip_ansi | grep -i 'modes' || true
+  fi
+}
+
+# --- Hyprland -------------------------------------------------------------------------------
+session_hyprland() {
+  # The connector is known from sysfs before the session exists, so the monitor rule is written
+  # first and Hyprland starts directly at the right resolution. monitors.lua is generated on every
+  # run (hyprland.lua loads it); everything else in ~/.config/hypr is yours.
+  resolve_connector
+  local conf=/home/$CT_USER/.config/hypr
+  install -d -o "$CT_USER" -g "$UGRP" "$conf"
+  cat >"$conf/monitors.lua" <<LUA
+-- Generated by container/03-session.sh on every install run: do not edit (change CONNECTOR and
+-- RESOLUTION in config.sh, or override them in hyprland.lua after the dofile line).
+hl.monitor({ output = "${CONN}", mode = "${RESOLUTION}", position = "0x0", scale = 1 })
+LUA
+  chown "$CT_USER:$UGRP" "$conf/monitors.lua"
+
+  hypr_ready() { [[ -n $(hypr_sig) ]] && hc version; }
+  if hypr_ready &>/dev/null; then
+    log "Hyprland already running: reloading its config"
+    hc reload || warn "hyprctl reload failed."
+  else
+    log "Starting hyprland-session"
+    systemctl start hyprland-session.service
+  fi
+  wait_for 120 "Hyprland to answer hyprctl" hypr_ready \
+    || die "Hyprland did not start: see 'journalctl -u hyprland-session -b' (card busy? dummy plug? hyprland older than 0.55?)"
+
+  has_output() { hc monitors 2>/dev/null | grep -qw "$CONN"; }
+  wait_for 60 "output $CONN visible to Hyprland" has_output \
+    || warn "Hyprland does not list $CONN: the resolution may not be applied."
+
+  sleep 2
+  if hc monitors 2>/dev/null | grep -Eq "${res}@${hz}[0-9.]* at"; then
+    log "Active mode: $RESOLUTION"
+  else
+    warn "Mode $RESOLUTION is not active (the dummy plug may not offer it). Monitors as Hyprland sees them:"
+    hc monitors 2>/dev/null || true
+  fi
+}
+
+# --- Start the session -------------------------------------------------------------------------
+if [[ $DESKTOP == plasma ]]; then session_plasma; else session_hyprland; fi
 
 # --- Sunshine ------------------------------------------------------------------------------
 sunshine_up() { ss -ltn | grep -q ':47990 '; }

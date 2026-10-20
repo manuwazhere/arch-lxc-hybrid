@@ -1,0 +1,9 @@
+# User target started by Hyprland itself (see hyprland.lua, "hyprland.start").
+# It pulls in graphical-session.target, so the user services that hang off it
+# (Sunshine among them) start with the compositor, as they do under Plasma.
+[Unit]
+Description=Hyprland compositor session
+Documentation=man:systemd.special(7)
+BindsTo=graphical-session.target
+Wants=graphical-session-pre.target
+After=graphical-session-pre.target

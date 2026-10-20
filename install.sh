@@ -36,6 +36,7 @@ exec > >(tee -a "logs/install-$(date +%Y%m%d-%H%M%S).log") 2>&1
 [[ $EUID -eq 0 ]] || die "Run as root on the Proxmox host."
 command -v pct >/dev/null || die "pct not found: this script must run on the Proxmox host."
 [[ $CT_USER =~ ^[a-z_][a-z0-9_-]*$ ]] || die "Invalid CT_USER: '$CT_USER'"
+[[ $DESKTOP == plasma || $DESKTOP == hyprland ]] || die "Invalid DESKTOP: '$DESKTOP' (plasma or hyprland)"
 
 # --- User password (asked up front so you can walk away afterwards) -------------------
 PW=${CT_USER_PASSWORD:-}
@@ -68,7 +69,8 @@ tar -C "$REPO_DIR" -czf "$tmpdir/setup.tgz" lib.sh container files
 # Only the variables needed inside the container (the password is not among them).
 for v in CT_USER IP_CT TIMEZONE LOCALE KB_LAYOUT SSH_PUBKEY SSH_DISABLE_PASSWORD \
   CONNECTOR RESOLUTION SUNSHINE_AUR_COMMIT SUNSHINE_EXTRA INSTALL_DIAG EXTRA_PACKAGES \
-  PLASMA_PACKAGES INSTALL_MEDIA MEDIA_PACKAGES DISABLE_FILE_INDEXING DISABLE_KWALLET \
+  DESKTOP PLASMA_PACKAGES INSTALL_MEDIA MEDIA_PACKAGES HYPRLAND_PACKAGES HYPRLAND_MEDIA_PACKAGES \
+  DISABLE_FILE_INDEXING DISABLE_KWALLET \
   INSTALL_AUR_HELPER AUR_PACKAGES; do
   declare -p "$v"
 done >"$tmpdir/config.sh"
@@ -80,7 +82,7 @@ pct push "$CTID" "$tmpdir/config.sh" "$STAGE_DIR/config.sh" --perms 644
 pct exec "$CTID" -- chmod -R go+rX "$STAGE_DIR"
 
 # --- 4. System, user, Plasma, Sunshine ------------------------------------------------
-log "[4/5] System, user, Plasma and Sunshine (the long part)"
+log "[4/5] System, user, desktop ($DESKTOP) and Sunshine (the long part)"
 pct exec "$CTID" -- bash "$STAGE_DIR/container/01-system.sh"
 if [[ -n $PW ]]; then
   # The password goes through stdin: it never shows up in process arguments.
@@ -90,7 +92,7 @@ fi
 pct exec "$CTID" -- bash "$STAGE_DIR/container/02-sunshine.sh"
 
 # --- 5. Session and verification --------------------------------------------------------
-log "[5/5] Starting the Plasma session and verifying"
+log "[5/5] Starting the $DESKTOP session and verifying"
 pct exec "$CTID" -- bash "$STAGE_DIR/container/03-session.sh"
 pct exec "$CTID" -- bash "$STAGE_DIR/container/verify.sh" || warn "Some checks failed: read the list above."
 

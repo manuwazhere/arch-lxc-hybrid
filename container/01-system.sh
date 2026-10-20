@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Inside the container, as root: system, packages, user, locale, SSH, Plasma.
+# Inside the container, as root: system, packages, user, locale, SSH, desktop (Plasma or Hyprland).
 # Idempotent. Installs no display manager and no browser.
 set -Eeuo pipefail
 STAGE=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -8,6 +8,8 @@ source "$STAGE/lib.sh"
 # shellcheck source=/dev/null
 source "$STAGE/config.sh"
 [[ $EUID -eq 0 ]] || die "This script must run as root inside the container."
+DESKTOP=${DESKTOP:-plasma}
+[[ $DESKTOP == plasma || $DESKTOP == hyprland ]] || die "Invalid DESKTOP: '$DESKTOP' (plasma or hyprland)"
 
 as_user() { runuser -u "$CT_USER" -- env HOME="/home/$CT_USER" "$@"; }
 
@@ -37,23 +39,34 @@ pacman -S --needed --noconfirm "${BASE[@]}"
 # and Moonlight cannot discover the host on its own.
 systemctl enable --now avahi-daemon
 
-# Phase 2: desktop (plasma-desktop, no meta package), multimedia, user extras.
-log "Packages: Plasma and multimedia desktop"
-DESKTOP=()
-read -ra plasma <<<"$PLASMA_PACKAGES"
-DESKTOP+=("${plasma[@]}")
-if ((INSTALL_MEDIA)); then
-  read -ra media <<<"$MEDIA_PACKAGES"
-  DESKTOP+=("${media[@]}")
+# Phase 2: desktop, multimedia, user extras.
+DESKTOP_PKGS=()
+if [[ $DESKTOP == plasma ]]; then
+  log "Packages: Plasma and multimedia desktop"
+  # plasma-desktop, no meta package
+  read -ra plasma <<<"$PLASMA_PACKAGES"
+  DESKTOP_PKGS+=("${plasma[@]}")
+  if ((INSTALL_MEDIA)); then
+    read -ra media <<<"$MEDIA_PACKAGES"
+    DESKTOP_PKGS+=("${media[@]}")
+  fi
+else
+  log "Packages: Hyprland and multimedia desktop"
+  read -ra hypr <<<"$HYPRLAND_PACKAGES"
+  DESKTOP_PKGS+=("${hypr[@]}")
+  if ((INSTALL_MEDIA)); then
+    read -ra media <<<"$HYPRLAND_MEDIA_PACKAGES"
+    DESKTOP_PKGS+=("${media[@]}")
+  fi
 fi
 if [[ -n $EXTRA_PACKAGES ]]; then
   read -ra extra <<<"$EXTRA_PACKAGES"
-  DESKTOP+=("${extra[@]}")
+  DESKTOP_PKGS+=("${extra[@]}")
 fi
-pacman -S --needed --noconfirm "${DESKTOP[@]}"
+pacman -S --needed --noconfirm "${DESKTOP_PKGS[@]}"
 
-# Safety net: a display manager would hold the DRM card open and KWin would not start.
-# (plasma-desktop brings none, but let's not depend on future dependencies.)
+# Safety net: a display manager would hold the DRM card open and the compositor would not start.
+# (neither desktop brings one, but let's not depend on future dependencies.)
 for dm in sddm plasmalogin plasma-login-manager gdm lightdm; do
   if systemctl list-unit-files "${dm}.service" --no-legend 2>/dev/null | grep -q .; then
     systemctl disable --now "${dm}.service" 2>/dev/null || true
@@ -100,32 +113,67 @@ locale-gen
 printf 'LANG=%s\n' "$LOCALE" >/etc/locale.conf
 ln -sf "/usr/share/zoneinfo/$TIMEZONE" /etc/localtime
 
-# --- Plasma: always-on session (written before the first start) -----------------------
-log "Plasma settings for an always-on session"
-as_user kwriteconfig6 --file powerdevilrc --group AC --group Display --key TurnOffDisplayWhenIdle false
-as_user kwriteconfig6 --file powerdevilrc --group AC --group Display --key DimDisplayWhenIdle false
-as_user kwriteconfig6 --file kscreenlockerrc --group Daemon --key Autolock false
-as_user kwriteconfig6 --file kscreenlockerrc --group Daemon --key LockOnResume false
-# powerdevil is a hard dependency of plasma-desktop: instead of removing it, make suspend impossible.
+# --- Always-on session: suspend can never happen (both desktops) --------------------------
 systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target
-if ((DISABLE_FILE_INDEXING)); then
-  as_user kwriteconfig6 --file baloofilerc --group 'Basic Settings' --key Indexing-Enabled false
-fi
-# KWallet is a dependency too: the session starts without a typed password, so it would
-# only ask you to create one. Disabling the subsystem keeps it out of the way.
-if ((DISABLE_KWALLET)); then
-  as_user kwriteconfig6 --file kwalletrc --group Wallet --key Enabled false
-fi
-if [[ -n $KB_LAYOUT ]]; then
-  as_user kwriteconfig6 --file kxkbrc --group Layout --key Use true
-  as_user kwriteconfig6 --file kxkbrc --group Layout --key LayoutList "$KB_LAYOUT"
+
+# --- Plasma: always-on session (written before the first start) -----------------------
+if [[ $DESKTOP == plasma ]]; then
+  log "Plasma settings for an always-on session"
+  as_user kwriteconfig6 --file powerdevilrc --group AC --group Display --key TurnOffDisplayWhenIdle false
+  as_user kwriteconfig6 --file powerdevilrc --group AC --group Display --key DimDisplayWhenIdle false
+  as_user kwriteconfig6 --file kscreenlockerrc --group Daemon --key Autolock false
+  as_user kwriteconfig6 --file kscreenlockerrc --group Daemon --key LockOnResume false
+  # powerdevil is a hard dependency of plasma-desktop: instead of removing it, we made suspend
+  # impossible above (sleep.target masked).
+  if ((DISABLE_FILE_INDEXING)); then
+    as_user kwriteconfig6 --file baloofilerc --group 'Basic Settings' --key Indexing-Enabled false
+  fi
+  # KWallet is a dependency too: the session starts without a typed password, so it would
+  # only ask you to create one. Disabling the subsystem keeps it out of the way.
+  if ((DISABLE_KWALLET)); then
+    as_user kwriteconfig6 --file kwalletrc --group Wallet --key Enabled false
+  fi
+  if [[ -n $KB_LAYOUT ]]; then
+    as_user kwriteconfig6 --file kxkbrc --group Layout --key Use true
+    as_user kwriteconfig6 --file kxkbrc --group Layout --key LayoutList "$KB_LAYOUT"
+  fi
 fi
 
-# --- Plasma Wayland session without a display manager -------------------------------
-log "plasma-session service"
-sed "s/@CT_USER@/$CT_USER/g" "$STAGE/files/plasma-session.service" >/etc/systemd/system/plasma-session.service
-systemctl daemon-reload
-systemctl set-default graphical.target
-systemctl enable plasma-session.service # started in 03-session.sh, after Sunshine
+# --- Wayland session without a display manager ---------------------------------------------
+if [[ $DESKTOP == plasma ]]; then
+  log "plasma-session service"
+  sed "s/@CT_USER@/$CT_USER/g" "$STAGE/files/plasma-session.service" >/etc/systemd/system/plasma-session.service
+  systemctl daemon-reload
+  systemctl set-default graphical.target
+  systemctl enable plasma-session.service # started in 03-session.sh, after Sunshine
+else
+  log "Hyprland config and hyprland-session service"
+  # The generated config is Lua: Hyprland >= 0.55 (older versions would ignore it).
+  hypr_ver=$(pacman -Q hyprland | awk '{print $2}')
+  if [[ $(vercmp "${hypr_ver%%-*}" 0.55.0) -lt 0 ]]; then
+    warn "hyprland $hypr_ver is older than 0.55: it will ignore the Lua config (hyprland.lua)."
+  fi
+
+  UGRP=$(id -gn "$CT_USER")
+  HCONF=/home/$CT_USER/.config/hypr
+  install -d -o "$CT_USER" -g "$UGRP" "/home/$CT_USER/.config" "$HCONF"
+  if [[ -e $HCONF/hyprland.lua ]]; then
+    log "$HCONF/hyprland.lua already exists: leaving it alone"
+  else
+    sed "s|@KB_LAYOUT@|$KB_LAYOUT|g" "$STAGE/files/hyprland.lua" >"$HCONF/hyprland.lua"
+    chown "$CT_USER:$UGRP" "$HCONF/hyprland.lua"
+  fi
+
+  # User target that Hyprland starts at launch: it pulls in graphical-session.target (Sunshine).
+  install -D -m 644 "$STAGE/files/hyprland-session.target" /etc/systemd/user/hyprland-session.target
+
+  # Recent Hyprland ships a launcher (start-hyprland); fall back to the bare binary.
+  if [[ -x /usr/bin/start-hyprland ]]; then HYPR_BIN=/usr/bin/start-hyprland; else HYPR_BIN=/usr/bin/Hyprland; fi
+  sed -e "s/@CT_USER@/$CT_USER/g" -e "s|@HYPRLAND_BIN@|$HYPR_BIN|g" \
+    "$STAGE/files/hyprland-session.service" >/etc/systemd/system/hyprland-session.service
+  systemctl daemon-reload
+  systemctl set-default graphical.target
+  systemctl enable hyprland-session.service # started in 03-session.sh, after Sunshine
+fi
 
 log "01-system done"

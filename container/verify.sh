@@ -7,6 +7,9 @@ source "$STAGE/lib.sh"
 # shellcheck source=/dev/null
 source "$STAGE/config.sh"
 
+DESKTOP=${DESKTOP:-plasma}
+[[ $DESKTOP == hyprland ]] && CAPTURE=wlr || CAPTURE=kwin
+
 pass=0
 fail=0
 check() {
@@ -25,11 +28,13 @@ t_sys_rw() { findmnt -no OPTIONS /sys | grep -qw rw; }
 t_seat_card() { loginctl seat-status seat0 | grep -q drm; }
 t_session() { loginctl list-sessions --no-legend | awk -v u="$CT_USER" '$3==u && $4=="seat0"' | grep -q .; }
 t_kwin() { pgrep -u "$CT_USER" kwin_wayland; }
+t_hypr() { pgrep -u "$CT_USER" -xi hyprland; }
+t_gsession() { [[ $(runuser -u "$CT_USER" -- env XDG_RUNTIME_DIR="/run/user/$(id -u "$CT_USER")" systemctl --user is-active graphical-session.target 2>/dev/null) == active ]]; }
 t_va_h264() { LIBVA_DRIVER_NAME=iHD vainfo --display drm --device /dev/dri/renderD128 2>&1 | grep -Eq 'VAProfileH264.*EncSliceLP'; }
 t_va_hevc() { LIBVA_DRIVER_NAME=iHD vainfo --display drm --device /dev/dri/renderD128 2>&1 | grep -Eq 'VAProfileHEVCMain.*EncSliceLP'; }
 t_vulkan() { vulkaninfo --summary 2>/dev/null | grep -qi intel; }
 t_port() { ss -ltn | grep -q ":$1 "; }
-t_conf() { grep -Eq '^capture\s*=\s*kwin' "/home/$CT_USER/.config/sunshine/sunshine.conf"; }
+t_conf() { grep -Eq "^capture\\s*=\\s*${CAPTURE}" "/home/$CT_USER/.config/sunshine/sunshine.conf"; }
 t_no_tmp_sudoers() { [[ ! -e /etc/sudoers.d/99-tmp-aur-build ]]; }
 t_uinput() { [[ -c /dev/uinput ]]; }
 t_avahi() { systemctl is-active --quiet avahi-daemon; }
@@ -53,17 +58,24 @@ check "/dev/uinput present" t_uinput
 check "/dev/input/event* nodes present" t_input
 check "seat0 lists the DRM card" t_seat_card
 check "session of $CT_USER on seat0" t_session
-check "kwin_wayland running" t_kwin
+if [[ $DESKTOP == plasma ]]; then
+  check "kwin_wayland running" t_kwin
+else
+  check "Hyprland running" t_hypr
+  check "graphical-session.target active (hyprland-session.target started)" t_gsession
+fi
 check "no display manager active" t_no_dm
-check "excluded packages absent (discover, bluedevil, plasma-nm, flatpak-kcm, plasma-meta...)" \
-  t_absent discover bluedevil plasma-nm flatpak-kcm plasma-meta plasma-firewall plasma-thunderbolt plasma-disks plasma-welcome krdp plasma-vault
+if [[ $DESKTOP == plasma ]]; then
+  check "excluded packages absent (discover, bluedevil, plasma-nm, flatpak-kcm, plasma-meta...)" \
+    t_absent discover bluedevil plasma-nm flatpak-kcm plasma-meta plasma-firewall plasma-thunderbolt plasma-disks plasma-welcome krdp plasma-vault
+fi
 check "suspend disabled (sleep.target masked)" t_sleep_masked
-if ((DISABLE_KWALLET)); then check "KWallet disabled" t_kwallet_off; fi
+if [[ $DESKTOP == plasma ]] && ((DISABLE_KWALLET)); then check "KWallet disabled" t_kwallet_off; fi
 if ((INSTALL_MEDIA)); then check "VLC installed" pacman -Q vlc; fi
 check "VA-API: H.264 encoding (EncSliceLP)" t_va_h264
 check "VA-API: HEVC encoding (EncSliceLP)" t_va_hevc
 check "Vulkan sees the Intel GPU" t_vulkan
-check "sunshine.conf: capture = kwin" t_conf
+check "sunshine.conf: capture = ${CAPTURE}" t_conf
 check "sunshine.conf: extra options (${SUNSHINE_EXTRA:-none})" t_extra_opts
 check "avahi-daemon active (mDNS announcement)" t_avahi
 check "Sunshine listening (47989)" t_port 47989

@@ -20,6 +20,12 @@ DISK_GB=64
 STORAGE=local-zfs            # rootfs storage (check with `pvesm status`)
 TEMPLATE_STORAGE=local       # storage holding the templates (vztmpl)
 
+# --- Desktop -----------------------------------------------------------------
+# plasma   = KDE Plasma (Wayland), Sunshine capture = kwin
+# hyprland = Hyprland (Wayland), Sunshine capture = wlr. Needs Hyprland >= 0.55
+#            (the generated config is Lua). Same GPU/Sunshine/session plumbing.
+DESKTOP=plasma
+
 # --- Container user ----------------------------------------------------------
 # The password is NOT stored here: install.sh asks for it
 # (or reads the CT_USER_PASSWORD environment variable, e.g. from config.local.sh).
@@ -38,7 +44,7 @@ RESOLUTION=1920x1080@60
 
 # --- Host: permissions of the GPU device nodes -------------------------------
 # renderD* stays 0666 (the container user needs it).
-# card*: 0660 by default; if KWin fails to start, set 0666.
+# card*: 0660 by default; if KWin/Hyprland fails to start, set 0666.
 CARD_MODE=0660
 
 # --- Miscellaneous -----------------------------------------------------------
@@ -57,11 +63,18 @@ EXTRA_PACKAGES=""            # extra pacman packages, space separated
 PLASMA_PACKAGES="plasma-desktop kscreen kscreenlocker kwin kpipewire xdg-desktop-portal-kde \
 plasma-pa plasma-systemmonitor kinfocenter kde-cli-tools kde-gtk-config breeze breeze-gtk \
 kdeplasma-addons drkonqi ocean-sound-theme oxygen-sounds konsole dolphin"
-INSTALL_MEDIA=1              # 1 = multimedia desktop (see MEDIA_PACKAGES)
+INSTALL_MEDIA=1              # 1 = multimedia desktop (MEDIA_PACKAGES, or HYPRLAND_MEDIA_PACKAGES)
 MEDIA_PACKAGES="spectacle gwenview okular ark vlc vlc-plugins-all plasma5-integration \
 ffmpegthumbs kdegraphics-thumbnailers kio-extras"
 DISABLE_FILE_INDEXING=1      # 1 = disable Baloo (file indexing): avoids CPU/disk spikes
 DISABLE_KWALLET=1            # 1 = disable KWallet: the session starts without a typed password
+
+# --- Hyprland packages (DESKTOP=hyprland) ----------------------------------------
+# Deliberately bare: compositor, portals, terminal, launcher, clipboard and screenshot
+# tools. No bar, no display manager, no browser. INSTALL_MEDIA=1 adds the set below.
+HYPRLAND_PACKAGES="hyprland xdg-desktop-portal-hyprland xdg-desktop-portal-gtk hyprpolkitagent \
+qt6-wayland foot fuzzel wl-clipboard grim slurp jq noto-fonts noto-fonts-emoji ttf-jetbrains-mono-nerd"
+HYPRLAND_MEDIA_PACKAGES="mpv vlc vlc-plugins-all imv evince file-roller nautilus ffmpegthumbnailer"
 
 # --- AUR helper and AUR packages ---------------------------------------------
 INSTALL_AUR_HELPER=1         # 1 = install yay-bin (via makepkg); then `yay -Syu` also updates Sunshine
