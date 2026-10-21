@@ -96,6 +96,7 @@ ufw ufw-docker plymouth sddm networkmanager power-profiles-daemon wireless-regdb
 qemu-user-static-binfmt plocate tzupdate gnome-disk-utility dotnet-runtime mariadb-libs postgresql-libs \
 fcitx5 fcitx5-gtk fcitx5-qt noto-fonts-cjk libreoffice-fresh obs-studio kdenlive obsidian xournalpp pinta \
 chromium gpu-screen-recorder localsend cliamp herdr aether omawrite omacut ttfx tensaku ttf-ia-writer \
+ttf-jetbrains-mono-nerd-basic \
 hyprland-preview-share-picker hyprsunset clang llvm yay nvim moonlight-qt tesseract tesseract-data-eng"
 # omarchy-* commands that are not installed (regex on the command name): they would touch the
 # bootloader, snapshots, the display manager, mirrors or the whole system.

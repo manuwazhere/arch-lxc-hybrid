@@ -81,13 +81,24 @@ if ((${#official[@]})); then
 fi
 
 build_pkgbuild() { # name: build omarchy-pkgs/pkgbuilds/<name> with makepkg and install it
-  local name=$1 dir work ver
+  local name=$1 dir work ver conflicts c
   dir=$PKGS/pkgbuilds/$name
   ver=$(as_user bash -c "cd '$dir' && source ./PKGBUILD && echo \"\${epoch:+\$epoch:}\$pkgver-\$pkgrel\"")
   if [[ $(pacman -Q "$name" 2>/dev/null | awk '{print $2}') == "$ver" ]]; then
     log "$name $ver already installed"
     return 0
   fi
+  # A package that conflicts with one already installed is skipped, not forced: pacman -U would
+  # abort the whole install. (ttf-jetbrains-mono-nerd-basic provides the same font as the
+  # ttf-jetbrains-mono-nerd that the Hyprland package set already installs.)
+  conflicts=$(as_user bash -c "cd '$dir' && source ./PKGBUILD && printf '%s\n' \"\${conflicts[@]:-}\"")
+  for c in $conflicts; do
+    c=${c%%[<>=]*}
+    if pacman -Qq "$c" &>/dev/null; then
+      warn "Skipping $name: it conflicts with the installed $c"
+      return 0
+    fi
+  done
   log "Building $name $ver (omarchy-pkgs)"
   work=$(as_user mktemp -d)
   as_user cp -a "$dir/." "$work/"
