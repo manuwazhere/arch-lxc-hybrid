@@ -186,6 +186,15 @@ if [[ -d $SRC/default/xdg-terminal-exec ]]; then
   cp -a "$SRC"/default/xdg-terminal-exec/. /usr/share/xdg-terminal-exec/
 fi
 
+# The one sudo rule Omarchy's theme switching relies on (the rest of /etc is left out). Without it
+# every theme change opens a polkit password prompt: omarchy-theme-set-browser-policy, which paints
+# the browser accent colour, falls back to pkexec when sudo would ask for a password.
+install -Dm440 "$SRC/etc/sudoers.d/omarchy-theme-browser" /etc/sudoers.d/omarchy-theme-browser
+if ! visudo -cf /etc/sudoers.d/omarchy-theme-browser >/dev/null; then
+  rm -f /etc/sudoers.d/omarchy-theme-browser
+  warn "sudoers rule omarchy-theme-browser rejected by visudo: not installed"
+fi
+
 # Omarchy's own user services (hardware-related ones are left out).
 if [[ -d $SRC/default/systemd/user ]]; then
   for f in "$SRC"/default/systemd/user/*.service; do
@@ -213,6 +222,19 @@ if [[ -n ${KB_LAYOUT:-} ]]; then
   printf '%s\n' '-- Written by container/03-omarchy.sh from KB_LAYOUT in config.sh.' \
     "hl.config({ input = { kb_layout = \"$KB_LAYOUT\" } })" >"$CONF/hypr/input.lua"
   chown "$CT_USER:$UGRP" "$CONF/hypr/input.lua"
+fi
+
+# Screensaver (after 2.5 minutes) and idle lock (after 5) are Omarchy shell features: its idle
+# service honours this state file. They would interrupt a streamed session while nobody is looking,
+# so "stay awake" is the default here. OMARCHY_STAY_AWAKE=0 in config.local.sh keeps Omarchy's behaviour.
+STAYAWAKE=$UHOME/.local/state/omarchy/indicators/stay-awake
+install -d -o "$CT_USER" -g "$UGRP" "$UHOME/.local" "$UHOME/.local/state" "$UHOME/.local/state/omarchy" \
+  "$UHOME/.local/state/omarchy/indicators"
+if ((${OMARCHY_STAY_AWAKE:-1})); then
+  touch "$STAYAWAKE"
+  chown "$CT_USER:$UGRP" "$STAYAWAKE"
+else
+  rm -f "$STAYAWAKE"
 fi
 
 # Mark Omarchy's migrations as done: they are for installs coming from older versions.

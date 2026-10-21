@@ -84,6 +84,8 @@ HYPRLAND_MEDIA_PACKAGES="mpv vlc vlc-plugins-all imv evince file-roller nautilus
 # pinned tag. It does NOT install Omarchy's own pacman packages (omarchy / omarchy-settings): they
 # hard-depend on sddm, limine and snapper and ship hooks that would break pacman -Syu in a container.
 INSTALL_OMARCHY=0
+# 1 = no screensaver and no idle lock ("stay awake"), 0 = Omarchy's defaults (screensaver 2.5 min, lock 5 min).
+OMARCHY_STAY_AWAKE=1
 OMARCHY_REF="v4.0.6"          # tag of https://github.com/omacom/omarchy
 # Commit of https://github.com/omacom/omarchy-pkgs: PKGBUILDs for packages that are not in the Arch repos.
 OMARCHY_PKGS_REF="c9518288fabfcd1c83fd9163f95f067df4c6cddc"
