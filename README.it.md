@@ -54,6 +54,20 @@ Sunshine, rilevamento del connettore, verifiche. Cambiano solo pacchetti, unit d
   avvia `hyprland-session.target`, che attiva `graphical-session.target` e con esso il servizio utente di
   Sunshine. Tasti: `Super+Invio` terminale, `Super+Spazio` launcher, `Super+Q` chiudi.
 
+**uwsm** (`HYPRLAND_UWSM=1`): Hyprland parte tramite [uwsm](https://github.com/Vladimir-csp/uwsm)
+(`uwsm start -- hyprland.desktop`, da `hyprland-session.service`), che attiva anche `graphical-session.target`
+e con esso Sunshine. Necessario per il livello Omarchy. Cambiando il valore su un CT esistente e rilanciando
+`./install.sh` la sessione viene riavviata.
+
+**Omarchy** (`INSTALL_OMARCHY=1`, serve `DESKTOP=hyprland` e `HYPRLAND_UWSM=1`): `container/03-omarchy.sh` copia
+[Omarchy](https://github.com/omacom/omarchy) al tag `OMARCHY_REF` (config Hyprland in Lua, shell quickshell,
+temi, comandi `omarchy-*`) e installa i pacchetti di `omarchy-base.packages` meno `OMARCHY_SKIP_PACKAGES`
+(repo ufficiali, poi i PKGBUILD di `omarchy-pkgs` a `OMARCHY_PKGS_REF`, poi l'AUR). Non installa di proposito i
+pacchetti `omarchy` / `omarchy-settings` (dipendono da sddm, limine e snapper e bloccano `pacman -Syu`) e salta i
+comandi che corrispondono a `OMARCHY_SKIP_COMMANDS` (factory reset, bootloader, mirror, `omarchy-update`...).
+Per passare a un tag nuovo cambia `OMARCHY_REF` e rilancia. Le tue modifiche in `~/.config` non vengono mai
+sovrascritte.
+
 Per provare l'altro desktop usa un CT nuovo (`CTID`/`IP_CT`, vedi la nota "Indirizzi") o `--recreate`.
 
 Restano manuali: le credenziali del pannello Sunshine (`https://<IP_CT>:47990`), il pairing con
@@ -83,10 +97,12 @@ host/setup-host.sh        controllo i915, uinput, regola udev per i nodi GPU
 host/create-ct.sh         template, pct create (privileged), righe del .conf, avvio
 container/01-system.sh    pacman, pacchetti, utente, sudo, SSH, locale, impostazioni desktop (Plasma o Hyprland)
 container/02-sunshine.sh  yay-bin e sunshine-bin dall'AUR (sudo temporaneo), sunshine.conf, servizio
-container/03-session.sh   avvio sessione, rilevamento HDMI, 1920x1080@60, attesa Sunshine
+container/03-omarchy.sh   livello Omarchy (opzionale: INSTALL_OMARCHY=1)
+container/04-session.sh   avvio sessione, rilevamento HDMI, 1920x1080@60, attesa Sunshine
 container/aur-build.sh    compila un pacchetto AUR con makepkg (da utente normale)
 container/verify.sh       verifiche (usabile anche da solo)
-files/plasma-session.service, hyprland-session.service/.target, hyprland.lua
+files/plasma-session.service, hyprland-session.service/.target(+drop-in uwsm), hyprland-uwsm-session, hyprland.lua
+tools/omarchy-recon.sh    report di sola lettura su un tag di Omarchy (pacchetti, repo, dipendenze dei comandi)
 docs/                     procedura manuale (EN/IT)
 ```
 

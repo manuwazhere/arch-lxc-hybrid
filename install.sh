@@ -37,6 +37,10 @@ exec > >(tee -a "logs/install-$(date +%Y%m%d-%H%M%S).log") 2>&1
 command -v pct >/dev/null || die "pct not found: this script must run on the Proxmox host."
 [[ $CT_USER =~ ^[a-z_][a-z0-9_-]*$ ]] || die "Invalid CT_USER: '$CT_USER'"
 [[ $DESKTOP == plasma || $DESKTOP == hyprland ]] || die "Invalid DESKTOP: '$DESKTOP' (plasma or hyprland)"
+if ((INSTALL_OMARCHY)); then
+  [[ $DESKTOP == hyprland ]] || die "INSTALL_OMARCHY=1 needs DESKTOP=hyprland."
+  ((HYPRLAND_UWSM)) || die "INSTALL_OMARCHY=1 needs HYPRLAND_UWSM=1 (Omarchy launches apps with uwsm-app)."
+fi
 
 # --- User password (asked up front so you can walk away afterwards) -------------------
 PW=${CT_USER_PASSWORD:-}
@@ -69,7 +73,8 @@ tar -C "$REPO_DIR" -czf "$tmpdir/setup.tgz" lib.sh container files
 # Only the variables needed inside the container (the password is not among them).
 for v in CT_USER IP_CT TIMEZONE LOCALE KB_LAYOUT SSH_PUBKEY SSH_DISABLE_PASSWORD \
   CONNECTOR RESOLUTION SUNSHINE_AUR_COMMIT SUNSHINE_EXTRA INSTALL_DIAG EXTRA_PACKAGES \
-  DESKTOP PLASMA_PACKAGES INSTALL_MEDIA MEDIA_PACKAGES HYPRLAND_PACKAGES HYPRLAND_MEDIA_PACKAGES \
+  DESKTOP HYPRLAND_UWSM PLASMA_PACKAGES INSTALL_MEDIA MEDIA_PACKAGES HYPRLAND_PACKAGES HYPRLAND_MEDIA_PACKAGES \
+  INSTALL_OMARCHY OMARCHY_REF OMARCHY_PKGS_REF OMARCHY_BUILD_FROM_PKGS OMARCHY_SKIP_PACKAGES OMARCHY_SKIP_COMMANDS \
   DISABLE_FILE_INDEXING DISABLE_KWALLET \
   INSTALL_AUR_HELPER AUR_PACKAGES; do
   declare -p "$v"
@@ -90,10 +95,13 @@ if [[ -n $PW ]]; then
   log "Password set for '$CT_USER'"
 fi
 pct exec "$CTID" -- bash "$STAGE_DIR/container/02-sunshine.sh"
+if ((INSTALL_OMARCHY)); then
+  pct exec "$CTID" -- bash "$STAGE_DIR/container/03-omarchy.sh"
+fi
 
 # --- 5. Session and verification --------------------------------------------------------
 log "[5/5] Starting the $DESKTOP session and verifying"
-pct exec "$CTID" -- bash "$STAGE_DIR/container/03-session.sh"
+pct exec "$CTID" -- bash "$STAGE_DIR/container/04-session.sh"
 pct exec "$CTID" -- bash "$STAGE_DIR/container/verify.sh" || warn "Some checks failed: read the list above."
 
 cat <<EOF

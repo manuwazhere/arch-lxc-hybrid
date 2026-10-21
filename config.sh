@@ -25,6 +25,9 @@ TEMPLATE_STORAGE=local       # storage holding the templates (vztmpl)
 # hyprland = Hyprland (Wayland), Sunshine capture = wlr. Needs Hyprland >= 0.55
 #            (the generated config is Lua). Same GPU/Sunshine/session plumbing.
 DESKTOP=plasma
+# hyprland only: 1 = start Hyprland through uwsm (the Wayland session manager) instead of
+# start-hyprland. Required by the Omarchy layer (34 of its commands use uwsm-app).
+HYPRLAND_UWSM=0
 
 # --- Container user ----------------------------------------------------------
 # The password is NOT stored here: install.sh asks for it
@@ -75,6 +78,28 @@ DISABLE_KWALLET=1            # 1 = disable KWallet: the session starts without a
 HYPRLAND_PACKAGES="hyprland xdg-desktop-portal-hyprland xdg-desktop-portal-gtk hyprpolkitagent \
 qt6-wayland foot fuzzel wl-clipboard grim slurp jq noto-fonts noto-fonts-emoji ttf-jetbrains-mono-nerd"
 HYPRLAND_MEDIA_PACKAGES="mpv vlc vlc-plugins-all imv evince file-roller nautilus ffmpegthumbnailer"
+
+# --- Omarchy layer (DESKTOP=hyprland + HYPRLAND_UWSM=1) -------------------------------
+# Copies Omarchy's files (Hyprland Lua config, quickshell shell, themes, omarchy-* commands) from a
+# pinned tag. It does NOT install Omarchy's own pacman packages (omarchy / omarchy-settings): they
+# hard-depend on sddm, limine and snapper and ship hooks that would break pacman -Syu in a container.
+INSTALL_OMARCHY=0
+OMARCHY_REF="v4.0.6"          # tag of https://github.com/omacom/omarchy
+# Commit of https://github.com/omacom/omarchy-pkgs: PKGBUILDs for packages that are not in the Arch repos.
+OMARCHY_PKGS_REF="c9518288fabfcd1c83fd9163f95f067df4c6cddc"
+# Packages built from omarchy-pkgs even when Arch has them (quickshell: Omarchy pins a patched build).
+OMARCHY_BUILD_FROM_PKGS="quickshell"
+# Packages of omarchy-base.packages that are NOT installed: bare metal, boot, services, big apps.
+OMARCHY_SKIP_PACKAGES="bluez bluez-tools bluez-utils bolt brightnessctl ddcutil asdcontrol \
+cups cups-filters cups-pk-helper system-config-printer docker docker-buildx docker-compose lazydocker \
+ufw ufw-docker plymouth sddm networkmanager power-profiles-daemon wireless-regdb kernel-modules-hook \
+qemu-user-static-binfmt plocate tzupdate gnome-disk-utility dotnet-runtime mariadb-libs postgresql-libs \
+fcitx5 fcitx5-gtk fcitx5-qt noto-fonts-cjk libreoffice-fresh obs-studio kdenlive obsidian xournalpp pinta \
+chromium gpu-screen-recorder localsend cliamp herdr aether omawrite omacut ttfx tensaku ttf-ia-writer \
+hyprland-preview-share-picker hyprsunset clang llvm yay nvim moonlight-qt tesseract tesseract-data-eng"
+# omarchy-* commands that are not installed (regex on the command name): they would touch the
+# bootloader, snapshots, the display manager, mirrors or the whole system.
+OMARCHY_SKIP_COMMANDS='^omarchy-(system-factory-reset.*|upgrade-to-quattro|provision-owner|hibernation-.*|refresh-limine|refresh-sddm|snapshot|plymouth-.*|reinstall.*|channel-set|update(-.*)?)$'
 
 # --- AUR helper and AUR packages ---------------------------------------------
 INSTALL_AUR_HELPER=1         # 1 = install yay-bin (via makepkg); then `yay -Syu` also updates Sunshine

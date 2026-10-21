@@ -9,6 +9,7 @@ source "$STAGE/lib.sh"
 source "$STAGE/config.sh"
 [[ $EUID -eq 0 ]] || die "This script must run as root inside the container."
 DESKTOP=${DESKTOP:-plasma}
+HYPRLAND_UWSM=${HYPRLAND_UWSM:-0}
 [[ $DESKTOP == plasma || $DESKTOP == hyprland ]] || die "Invalid DESKTOP: '$DESKTOP' (plasma or hyprland)"
 
 as_user() { runuser -u "$CT_USER" -- env HOME="/home/$CT_USER" "$@"; }
@@ -54,6 +55,7 @@ else
   log "Packages: Hyprland and multimedia desktop"
   read -ra hypr <<<"$HYPRLAND_PACKAGES"
   DESKTOP_PKGS+=("${hypr[@]}")
+  if ((HYPRLAND_UWSM)); then DESKTOP_PKGS+=(uwsm); fi
   if ((INSTALL_MEDIA)); then
     read -ra media <<<"$HYPRLAND_MEDIA_PACKAGES"
     DESKTOP_PKGS+=("${media[@]}")
@@ -145,7 +147,7 @@ if [[ $DESKTOP == plasma ]]; then
   sed "s/@CT_USER@/$CT_USER/g" "$STAGE/files/plasma-session.service" >/etc/systemd/system/plasma-session.service
   systemctl daemon-reload
   systemctl set-default graphical.target
-  systemctl enable plasma-session.service # started in 03-session.sh, after Sunshine
+  systemctl enable plasma-session.service # started in 04-session.sh, after Sunshine
 else
   log "Hyprland config and hyprland-session service"
   # The generated config is Lua: Hyprland >= 0.55 (older versions would ignore it).
@@ -167,13 +169,33 @@ else
   # User target that Hyprland starts at launch: it pulls in graphical-session.target (Sunshine).
   install -D -m 644 "$STAGE/files/hyprland-session.target" /etc/systemd/user/hyprland-session.target
 
-  # Recent Hyprland ships a launcher (start-hyprland); fall back to the bare binary.
-  if [[ -x /usr/bin/start-hyprland ]]; then HYPR_BIN=/usr/bin/start-hyprland; else HYPR_BIN=/usr/bin/Hyprland; fi
+  if ((HYPRLAND_UWSM)); then
+    # uwsm starts Hyprland and graphical-session.target itself: the target above becomes a no-op.
+    [[ -f /usr/share/wayland-sessions/hyprland.desktop ]] \
+      || warn "/usr/share/wayland-sessions/hyprland.desktop is missing: 'uwsm start -- hyprland.desktop' will fail."
+    install -D -m 755 "$STAGE/files/hyprland-uwsm-session" /usr/local/libexec/hyprland-uwsm-session
+    install -D -m 644 "$STAGE/files/hyprland-session.target.d-uwsm.conf" \
+      /etc/systemd/user/hyprland-session.target.d/10-uwsm.conf
+    HYPR_BIN=/usr/local/libexec/hyprland-uwsm-session
+  else
+    rm -rf /etc/systemd/user/hyprland-session.target.d /usr/local/libexec/hyprland-uwsm-session
+    # Recent Hyprland ships a launcher (start-hyprland); fall back to the bare binary.
+    if [[ -x /usr/bin/start-hyprland ]]; then HYPR_BIN=/usr/bin/start-hyprland; else HYPR_BIN=/usr/bin/Hyprland; fi
+  fi
+
+  unit=/etc/systemd/system/hyprland-session.service
+  old_sum=$(sha256sum "$unit" 2>/dev/null | cut -d' ' -f1 || true)
   sed -e "s/@CT_USER@/$CT_USER/g" -e "s|@HYPRLAND_BIN@|$HYPR_BIN|g" \
-    "$STAGE/files/hyprland-session.service" >/etc/systemd/system/hyprland-session.service
+    "$STAGE/files/hyprland-session.service" >"$unit"
+  new_sum=$(sha256sum "$unit" | cut -d' ' -f1)
   systemctl daemon-reload
   systemctl set-default graphical.target
-  systemctl enable hyprland-session.service # started in 03-session.sh, after Sunshine
+  systemctl enable hyprland-session.service # started in 04-session.sh, after Sunshine
+  # A session that is already running keeps the old launcher until it is restarted.
+  if [[ -n $old_sum && $old_sum != "$new_sum" ]] && systemctl is-active --quiet hyprland-session.service; then
+    log "Session unit changed (HYPRLAND_UWSM=$HYPRLAND_UWSM): restarting hyprland-session"
+    systemctl restart hyprland-session.service
+  fi
 fi
 
 log "01-system done"

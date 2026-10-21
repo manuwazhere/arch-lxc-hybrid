@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Started by hyprland-session.service (system unit, User=<desktop user>, PAMName=login) when
+# HYPRLAND_UWSM=1. Hands the session over to uwsm, which then runs Hyprland as a systemd user
+# unit (wayland-wm@hyprland.desktop.service) and starts graphical-session.target (and with it
+# Sunshine) once the compositor is up. Blocks until the session ends.
+set -eu
+
+# uwsm needs the logind session and seat of this login. PAM normally exports XDG_SESSION_ID;
+# if it did not, take the user's session from logind.
+if [[ -z ${XDG_SESSION_ID:-} ]]; then
+  XDG_SESSION_ID=$(loginctl list-sessions --no-legend 2>/dev/null | awk -v u="$USER" '$3 == u {print $1; exit}')
+  export XDG_SESSION_ID
+fi
+export XDG_SEAT=${XDG_SEAT:-seat0}
+
+# This line lands in the journal: it is the first thing to look at if the session does not start.
+echo "hyprland-uwsm-session: user=$USER seat=$XDG_SEAT session=${XDG_SESSION_ID:-<none>} runtime=${XDG_RUNTIME_DIR:-<none>}" >&2
+
+exec uwsm start -- hyprland.desktop

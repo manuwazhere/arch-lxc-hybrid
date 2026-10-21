@@ -9,6 +9,8 @@ source "$STAGE/config.sh"
 
 DESKTOP=${DESKTOP:-plasma}
 [[ $DESKTOP == hyprland ]] && CAPTURE=wlr || CAPTURE=kwin
+HYPRLAND_UWSM=${HYPRLAND_UWSM:-0}
+INSTALL_OMARCHY=${INSTALL_OMARCHY:-0}
 
 pass=0
 fail=0
@@ -29,6 +31,8 @@ t_seat_card() { loginctl seat-status seat0 | grep -q drm; }
 t_session() { loginctl list-sessions --no-legend | awk -v u="$CT_USER" '$3==u && $4=="seat0"' | grep -q .; }
 t_kwin() { pgrep -u "$CT_USER" kwin_wayland; }
 t_hypr() { pgrep -u "$CT_USER" -xi hyprland; }
+t_uwsm() { [[ -n $(runuser -u "$CT_USER" -- env XDG_RUNTIME_DIR="/run/user/$(id -u "$CT_USER")" systemctl --user list-units --state=active --no-legend 'wayland-wm@*.service' 2>/dev/null) ]]; }
+t_quickshell() { pgrep -u "$CT_USER" -x quickshell; }
 t_gsession() { [[ $(runuser -u "$CT_USER" -- env XDG_RUNTIME_DIR="/run/user/$(id -u "$CT_USER")" systemctl --user is-active graphical-session.target 2>/dev/null) == active ]]; }
 t_va_h264() { LIBVA_DRIVER_NAME=iHD vainfo --display drm --device /dev/dri/renderD128 2>&1 | grep -Eq 'VAProfileH264.*EncSliceLP'; }
 t_va_hevc() { LIBVA_DRIVER_NAME=iHD vainfo --display drm --device /dev/dri/renderD128 2>&1 | grep -Eq 'VAProfileHEVCMain.*EncSliceLP'; }
@@ -63,6 +67,11 @@ if [[ $DESKTOP == plasma ]]; then
 else
   check "Hyprland running" t_hypr
   check "graphical-session.target active (hyprland-session.target started)" t_gsession
+  if ((HYPRLAND_UWSM)); then check "uwsm: wayland-wm@*.service active" t_uwsm; fi
+  if ((INSTALL_OMARCHY)); then
+    check "Omarchy installed ($OMARCHY_REF: /usr/bin/omarchy-menu)" test -x /usr/bin/omarchy-menu
+    check "Omarchy shell (quickshell) running" t_quickshell
+  fi
 fi
 check "no display manager active" t_no_dm
 if [[ $DESKTOP == plasma ]]; then
