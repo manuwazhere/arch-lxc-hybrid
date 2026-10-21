@@ -106,7 +106,11 @@ build_pkgbuild() { # name: build omarchy-pkgs/pkgbuilds/<name> with makepkg and 
   cat "$work/PKGBUILD"
   echo "----------------------------------------------------------"
   as_user bash -c "cd '$work' && makepkg -s --noconfirm --needed"
-  pacman -U --noconfirm --needed "$work"/*.pkg.tar.*
+  # Install only the package we asked for: a split PKGBUILD (yaru: gtk, gnome-shell, xfwm4 themes...)
+  # produces several, and the others have dependencies we do not want (gtk-engine-murrine, gnome-shell).
+  local files=("$work/$name"-[0-9]*.pkg.tar.*)
+  [[ -e ${files[0]} ]] || die "makepkg did not produce a package named $name (files: $(ls "$work"))"
+  pacman -U --noconfirm --needed "${files[@]}"
   rm -rf "$work"
 }
 for p in "${build[@]}"; do build_pkgbuild "$p"; done
