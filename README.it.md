@@ -1,11 +1,19 @@
-# Arch Linux in un LXC su Proxmox con Plasma Wayland e Sunshine
+# arch-lxc-hybrid
 
 🇬🇧 [English](README.md)
 
-Un desktop KDE Plasma o Hyprland (Wayland) in un container LXC Arch Linux **privileged** su Proxmox, che
-condivide la iGPU Intel dell'host (driver `i915`), con streaming tramite Sunshine (codifica VAAPI; cattura
-`kwin` per Plasma, `wlr` per Hyprland) verso Moonlight. Niente display manager: la sessione parte da un servizio systemd. L'obiettivo è un
-desktop che si comporta come un SO installato in locale, con accelerazione GPU e streaming solidi.
+Un desktop Arch Linux in un container LXC **privileged** su Proxmox, che condivide la iGPU Intel
+dell'host (driver `i915`) e va in streaming con Sunshine (codifica VAAPI) verso Moonlight. Una base,
+tre livelli:
+
+1. **Base** (sempre): host, container, passthrough di GPU e input, sessione avviata da un servizio
+   systemd (niente display manager), Sunshine, verifiche.
+2. **Desktop** (`DESKTOP`): KDE Plasma (`capture = kwin`) oppure Hyprland (`capture = wlr`).
+3. **Extra Hyprland** (opzionali): `HYPRLAND_UWSM=1`, e `INSTALL_OMARCHY=1` per mettere sopra
+   [Omarchy](https://github.com/omacom/omarchy).
+
+L'obiettivo è un desktop che si comporta come un SO installato in locale, con accelerazione GPU e
+streaming solidi.
 
 La procedura manuale originale (con la tabella dei problemi incontrati) è in
 [`docs/manual-procedure.it.md`](docs/manual-procedure.it.md).
@@ -22,7 +30,7 @@ La procedura manuale originale (con la tabella dei problemi incontrati) è in
 
 ```bash
 # sull'host Proxmox, da root (usa tmux: l'installazione dura diversi minuti)
-git clone <questo-repo> && cd arch-lxc-sunshine
+git clone <questo-repo> && cd arch-lxc-hybrid
 nano config.sh                # CTID, IP, gateway, storage, utente...  (oppure usa config.local.sh)
 ./install.sh                  # chiede la password dell'utente
 ./install.sh --recreate       # distrugge il CT (chiede conferma) e riparte da zero
@@ -32,7 +40,10 @@ Tutto è idempotente: puoi rilanciare `./install.sh` su un container esistente. 
 (ignorati da git).
 
 I valori personali (gateway, DNS, locale, pacchetti AUR...) vanno in `config.local.sh`, che viene letto
-dopo `config.sh` ed è ignorato da git, così un `git pull` non va mai in conflitto con le tue impostazioni:
+dopo `config.sh` ed è ignorato da git, così un `git pull` non va mai in conflitto con le tue impostazioni.
+Mettici **solo le righe che cambi**: ognuna sostituisce la variabile con lo stesso nome di `config.sh`, il
+resto resta al valore predefinito (una copia intera di `config.sh` nasconderebbe i nuovi valori predefiniti
+che arrivano con gli aggiornamenti):
 
 ```bash
 # config.local.sh

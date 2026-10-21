@@ -11,7 +11,7 @@ CIDR=24
 GATEWAY=192.168.1.1          # WARNING: your LAN's real gateway (the router), NOT the DNS server
 DNS=192.168.1.1
 BRIDGE=vmbr0                 # 1G bridge, same speed as the Moonlight client
-CT_HOSTNAME=arch-desktop
+CT_HOSTNAME=arch-lxc-hybrid
 
 CORES=10
 MEMORY_MB=16384

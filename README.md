@@ -1,12 +1,18 @@
-# Arch Linux in an LXC on Proxmox with Plasma Wayland and Sunshine
+# arch-lxc-hybrid
 
 🇮🇹 [Italiano](README.it.md)
 
-A KDE Plasma or Hyprland (Wayland) desktop in a **privileged** Arch Linux LXC container on Proxmox,
-sharing the host's Intel iGPU (`i915` driver), streamed with Sunshine (VAAPI encoding; `kwin` capture
-for Plasma, `wlr` for Hyprland) to Moonlight.
-No display manager: the session is started by a systemd service. The goal is a desktop that behaves
-like a locally installed OS, with rock-solid GPU acceleration and streaming.
+An Arch Linux desktop in a **privileged** LXC container on Proxmox, sharing the host's Intel iGPU
+(`i915` driver) and streamed with Sunshine (VAAPI encoding) to Moonlight. One base, three layers:
+
+1. **Base** (always): host setup, container, GPU and input passthrough, a session started by a systemd
+   service (no display manager), Sunshine, checks.
+2. **Desktop** (`DESKTOP`): KDE Plasma (`capture = kwin`) or Hyprland (`capture = wlr`).
+3. **Hyprland extras** (optional): `HYPRLAND_UWSM=1`, and `INSTALL_OMARCHY=1` to put
+   [Omarchy](https://github.com/omacom/omarchy) on top.
+
+The goal is a desktop that behaves like a locally installed OS, with rock-solid GPU acceleration and
+streaming.
 
 The original manual procedure (and the table of problems met along the way) is in
 [`docs/manual-procedure.md`](docs/manual-procedure.md).
@@ -23,7 +29,7 @@ The original manual procedure (and the table of problems met along the way) is i
 
 ```bash
 # on the Proxmox host, as root (use tmux: the install takes several minutes)
-git clone <this-repo> && cd arch-lxc-sunshine
+git clone <this-repo> && cd arch-lxc-hybrid
 nano config.sh                # CTID, IP, gateway, storage, user...  (or use config.local.sh)
 ./install.sh                  # asks for the user's password
 ./install.sh --recreate       # destroys the CT (asks for confirmation) and starts from scratch
@@ -33,7 +39,9 @@ Everything is idempotent: you can re-run `./install.sh` on an existing container
 (ignored by git).
 
 Personal values (gateway, DNS, locale, AUR packages...) go in `config.local.sh`, which is read after
-`config.sh` and ignored by git, so `git pull` never conflicts with your settings:
+`config.sh` and ignored by git, so `git pull` never conflicts with your settings. Put in it **only the
+lines you change**: each one overrides the variable of the same name in `config.sh`, everything else
+keeps its default (a full copy of `config.sh` would hide any new default that comes with an update):
 
 ```bash
 # config.local.sh
